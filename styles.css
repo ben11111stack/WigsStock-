@@ -176,8 +176,14 @@ details summary { cursor: pointer; }
 }
 .scan-frame::after {
   content: ""; position: absolute; inset-inline: 6px; top: 50%;
-  height: 2px; background: color-mix(in oklab, var(--primary) 70%, #fff);
-  box-shadow: 0 0 8px 1px color-mix(in oklab, var(--primary) 60%, transparent);
+  height: 3px; border-radius: 2px;
+  background: #ff3b30;                              /* red while searching */
+  box-shadow: 0 0 10px 1px rgba(255,59,48,.75);
+  transition: background .1s, box-shadow .1s;
+}
+.scan-frame.hit::after {
+  background: #30d158;                              /* green on a successful scan */
+  box-shadow: 0 0 12px 2px rgba(48,209,88,.9);
 }
 #reader.hidden { display: none; }
 .cam-start {
@@ -260,6 +266,16 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
   font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px;
   background: var(--surface-2); color: var(--ink-3); margin-inline-start: auto;
 }
+
+/* ---------- Report ---------- */
+.rep-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.rep-head h2 { margin: 0; }
+.rep-head .btn { margin-inline-start: auto; }
+.progress {
+  height: 10px; border-radius: 6px; background: var(--surface-2);
+  border: 1px solid var(--line); overflow: hidden; margin: 8px 0 6px;
+}
+.progress-bar { height: 100%; background: var(--ok); border-radius: 6px; transition: width .3s; }
 
 /* ---------- Bottom nav ---------- */
 .bottomnav {

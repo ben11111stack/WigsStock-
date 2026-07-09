@@ -212,9 +212,17 @@ function showScanFeedback(code, wasDuplicate) {
   else { kind = 'ok'; msg = '✅ נסרק בהצלחה'; }
   banner.className = 'scan-banner ' + kind;
   banner.innerHTML = `<div class="code">${esc(code)}</div><div class="msg">${msg}</div>`;
+  // flash the scan line green on a successful read (red otherwise)
+  const frame = document.querySelector('.scan-frame');
+  if (frame && (kind === 'ok' || kind === 'dup')) {
+    frame.classList.add('hit');
+    clearTimeout(hitTimer);
+    hitTimer = setTimeout(() => frame.classList.remove('hit'), 700);
+  }
   beep(kind);
   if (navigator.vibrate) navigator.vibrate(kind === 'ok' ? 40 : [40, 60, 40]);
 }
+let hitTimer = null;
 
 /* Web-Audio beep so workers get audible confirmation without a sound file. */
 let audioCtx = null;
@@ -376,6 +384,22 @@ function renderScanStats() {
   set('#scanUnknown', r.unknown.length);
 }
 
+function statusBreakdownTable() {
+  const inv = state.inventory, scans = effectiveScans();
+  const totals = {}, scanned = {};
+  for (const bc in inv) {
+    const st = inv[bc];
+    totals[st] = (totals[st] || 0) + 1;
+    if (bc in scans) scanned[st] = (scanned[st] || 0) + 1;
+  }
+  const keys = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
+  if (!keys.length) return '<p class="muted small">—</p>';
+  const rows = keys.map(st =>
+    `<tr><td><span class="tag ${isInStore(st) ? 'instock' : 'other'}">${esc(st)}</span></td>` +
+    `<td>${totals[st].toLocaleString()}</td><td>${(scanned[st] || 0).toLocaleString()}</td></tr>`).join('');
+  return `<div class="scroll"><table><thead><tr><th>סטטוס</th><th>סה"כ</th><th>נסרקו</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
 function renderReport() {
   const r = reconcile();
   const el = $('#reportBody');
@@ -388,19 +412,35 @@ function renderReport() {
   const statusCol = { label: 'סטטוס בשיטס', render: i =>
     `<span class="tag ${isInStore(i.status) ? 'instock' : 'other'}">${esc(i.status)}</span>` };
   const countCol = { label: 'פעמים', render: i => i.count };
+  const expected = r.expectedInStock;
+  const pct = expected ? Math.round(r.ok.length / expected * 100) : 0;
+  const cloudLine = cloudEnabled()
+    ? `<span class="muted small">☁️ ${state.countId} · ${state.cloudDevices || 0} עמדות</span>`
+    : `<span class="muted small">מקומי</span>`;
 
   el.innerHTML = `
     <div class="card">
-      <h2>סיכום ספירה</h2>
+      <div class="rep-head">
+        <h2>דוח ספירה</h2>
+        <button class="btn ghost small-btn" onclick="pullCloud();renderReport()">🔄 רענן</button>
+      </div>
+      ${cloudLine}
+      <div class="progress" title="${pct}%"><div class="progress-bar" style="width:${pct}%"></div></div>
+      <p class="muted small">נסרקו <b>${r.ok.length.toLocaleString()}</b> מתוך <b>${expected.toLocaleString()}</b> שאמורות להיות בחנות (<b>${pct}%</b>)</p>
       <div class="stats">
         <div class="stat total"><div class="num">${r.totalInventory.toLocaleString()}</div><div class="lbl">סה"כ במלאי (שיטס)</div></div>
         <div class="stat"><div class="num">${r.totalScanned.toLocaleString()}</div><div class="lbl">נסרקו פיזית</div></div>
-        <div class="stat ok"><div class="num">${r.ok.length.toLocaleString()}</div><div class="lbl">✅ תקין (in-stock + נסרק)</div></div>
-        <div class="stat bad"><div class="num">${r.missing.length.toLocaleString()}</div><div class="lbl">❌ חסר (in-stock שלא נסרק)</div></div>
+        <div class="stat ok"><div class="num">${r.ok.length.toLocaleString()}</div><div class="lbl">✅ תקין (במלאי + נסרק)</div></div>
+        <div class="stat bad"><div class="num">${r.missing.length.toLocaleString()}</div><div class="lbl">❌ חסר (אמור בחנות, לא נסרק)</div></div>
         <div class="stat warn"><div class="num">${r.foundOther.length.toLocaleString()}</div><div class="lbl">⚠️ בחנות אך מסומן אחרת</div></div>
         <div class="stat unknown"><div class="num">${r.unknown.length.toLocaleString()}</div><div class="lbl">❓ ברקוד לא מוכר</div></div>
       </div>
-      <p class="muted small" style="margin-top:10px">צפוי במלאי (in-stock): <b>${r.expectedInStock.toLocaleString()}</b> · כפילויות: <b>${r.duplicates.length}</b></p>
+      <p class="muted small" style="margin-top:10px">צפוי בחנות (in-stock+consignment): <b>${expected.toLocaleString()}</b> · כפילויות: <b>${r.duplicates.length}</b></p>
+    </div>
+
+    <div class="card reclist">
+      <h3>📋 פילוח לפי סטטוס בשיטס</h3>
+      ${statusBreakdownTable()}
     </div>
 
     <div class="card reclist">
@@ -565,6 +605,7 @@ async function pullCloud() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     state.cloudScans = data.scans || {};
+    state.cloudDevices = data.devices || 0;
     save();
     renderReport(); renderScanStats();
     setCloudStatus('ok', data);
@@ -682,7 +723,7 @@ function showTab(name) {
   $$('.tab').forEach(t => t.classList.toggle('active', t.id === 'panel-' + name));
   $$('nav button').forEach(b => b.classList.toggle('active', b.id === 'tab-' + name));
   if (wasScan && name !== 'scan') stopCamera();       // free the camera when leaving
-  if (name === 'report') renderReport();
+  if (name === 'report') { renderReport(); if (cloudEnabled()) pullCloud(); }   // refresh across stations
   // start within the tap so iOS allows the camera; falls back to the overlay button
   if (name === 'scan') ensureCamera();
 }
