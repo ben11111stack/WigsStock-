@@ -226,40 +226,67 @@ function setupScanInput() {
   $('#tab-scan').addEventListener('click', () => setTimeout(() => input.focus(), 50));
 }
 
-/* ---------- Camera scanning (native BarcodeDetector) ---------- */
-let cameraStream = null, detector = null, rafId = null;
+/* ---------- Camera scanning ----------
+ * Uses the native BarcodeDetector on Android/Chrome (fast), and falls back
+ * to ZXing on iPhone/Safari and anywhere else that lacks BarcodeDetector.
+ * Camera access requires a secure context (https:// or localhost) — opening
+ * the file directly from disk on a phone will NOT get the camera; host it
+ * (e.g. GitHub Pages) for camera scanning. Hardware scanners work anywhere.
+ */
+let cameraOn = false, detector = null, rafId = null, zxingReader = null, cameraStream = null;
 
 async function startCamera() {
   const btn = $('#cameraBtn');
-  if (cameraStream) { stopCamera(); return; }
+  if (cameraOn) { stopCamera(); return; }
 
-  if (!('BarcodeDetector' in window)) {
+  if (!isSecureContextForCamera()) {
     $('#cameraNote').textContent =
-      'הדפדפן לא תומך בסריקת מצלמה. אפשר להשתמש בסורק ברקוד חיצוני (USB/בלוטות\') או בהקלדה ידנית. מומלץ Chrome על אנדרואיד.';
+      'למצלמה צריך שהאפליקציה תיפתח מכתובת אתר מאובטחת (https), למשל GitHub Pages — לא מקובץ מקומי. ' +
+      'בינתיים אפשר סורק ברקוד חיצוני (בלוטות\'/USB) או הקלדה ידנית.';
     return;
   }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    $('#cameraNote').textContent = 'הדפדפן לא תומך בגישה למצלמה. השתמשי בסורק חיצוני או בהקלדה.';
+    return;
+  }
+
+  $('#cameraNote').textContent = '';
+  const video = $('#video');
+  $('#reader').classList.remove('hidden');
+  btn.textContent = '⏹ עצור מצלמה';
+  btn.classList.add('secondary');
+  cameraOn = true;
+
   try {
-    detector = new window.BarcodeDetector({
-      formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar', 'qr_code']
-    });
-    cameraStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment' }
-    });
-    const video = $('#video');
-    video.srcObject = cameraStream;
-    await video.play();
-    $('#reader').classList.remove('hidden');
-    btn.textContent = '⏹ עצור מצלמה';
-    btn.classList.add('secondary');
-    scanLoop();
+    if ('BarcodeDetector' in window) {
+      detector = new window.BarcodeDetector({
+        formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar', 'qr_code']
+      });
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      video.srcObject = cameraStream;
+      video.setAttribute('playsinline', 'true');
+      await video.play();
+      scanLoop();
+    } else if (window.ZXing) {
+      zxingReader = new ZXing.BrowserMultiFormatReader();
+      await zxingReader.decodeFromVideoDevice(null, video, (result) => {
+        if (result) recordScan(result.getText());
+      });
+    } else {
+      throw new Error('אין תמיכה בסריקת מצלמה בדפדפן הזה');
+    }
   } catch (e) {
-    $('#cameraNote').textContent = 'לא ניתן לגשת למצלמה: ' + e.message;
+    cameraOn = false;
+    $('#reader').classList.add('hidden');
+    btn.textContent = '📷 סרוק עם המצלמה';
+    btn.classList.remove('secondary');
+    $('#cameraNote').textContent = 'לא ניתן לגשת למצלמה: ' + (e.message || e);
   }
 }
 
 async function scanLoop() {
   const video = $('#video');
-  if (!cameraStream) return;
+  if (!cameraOn || !detector) return;
   try {
     const codes = await detector.detect(video);
     if (codes.length) recordScan(codes[0].rawValue);
@@ -267,10 +294,17 @@ async function scanLoop() {
   rafId = requestAnimationFrame(() => setTimeout(scanLoop, 120));
 }
 
+function isSecureContextForCamera() {
+  return window.isSecureContext ||
+    ['localhost', '127.0.0.1'].includes(location.hostname);
+}
+
 function stopCamera() {
+  cameraOn = false;
   if (rafId) cancelAnimationFrame(rafId);
-  if (cameraStream) cameraStream.getTracks().forEach(t => t.stop());
-  cameraStream = null;
+  if (zxingReader) { try { zxingReader.reset(); } catch (e) {} zxingReader = null; }
+  if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+  detector = null;
   $('#reader').classList.add('hidden');
   const btn = $('#cameraBtn');
   btn.textContent = '📷 סרוק עם המצלמה';
