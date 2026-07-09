@@ -84,6 +84,26 @@ export default {
         return new Response(csv, { status: 200, headers: { 'Content-Type': 'text/csv; charset=utf-8', ...CORS } });
       }
 
+      // Write scan results back into the sheet via the owner's Apps Script
+      // web app (server-side POST avoids browser CORS with Apps Script).
+      if (path === '/api/writeback' && req.method === 'POST') {
+        const body = await req.json();
+        const scriptUrl = (body.script_url || '').trim();
+        const scans = body.scans || {};
+        if (!scriptUrl) return json({ error: 'script_url required' }, 400);
+        if (!/^https:\/\/script\.google\.com\//.test(scriptUrl)) return json({ error: 'only Apps Script (script.google.com) URLs are allowed' }, 400);
+        const r = await fetch(scriptUrl, {
+          method: 'POST', redirect: 'follow',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scans, column: body.column })
+        });
+        const text = await r.text();
+        let data;
+        try { data = JSON.parse(text); }
+        catch (e) { return json({ error: 'unexpected response from Apps Script (is it deployed as a web app, access = Anyone?)', raw: text.slice(0, 200) }, 502); }
+        return json(data, data && data.ok ? 200 : 502);
+      }
+
       // Wipe an entire count (all devices) — used by the app's reset button.
       if (path === '/api/reset' && req.method === 'POST') {
         const body = await req.json();

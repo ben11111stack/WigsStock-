@@ -100,6 +100,18 @@
         </div>
         <div class="hint">כל עמדה מקבלת שם משלה בשדה "עמדה" למעלה. אותו "שם ספירה" בכל המכשירים = ספירה משותפת. הגדרת השרת: ראו <b>worker/README.md</b>.</div>
       </div>
+
+      <div class="sec-head" style="padding-inline:18px">כתיבה חזרה לשיטס</div>
+      <div class="card">
+        <p class="muted small">כותב עמודה חדשה <b>"נסרק"</b> בגיליון (כמות סריקות לכל פאה). <b>לא נוגע בעמודות המקוריות.</b> דורש הרשאת עריכה + סקריפט חד-פעמי (ראו <b>worker/sheets-writeback.gs</b>).</p>
+        <div class="spacer"></div>
+        <label class="fld">קישור Apps Script (Web app)
+          <input id="writeUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec">
+        </label>
+        <button class="btn" id="writeBtn">כתוב תוצאות לשיטס</button>
+        <p class="small" id="writeNote" style="margin:8px 0 0"></p>
+        <div class="hint">בגיליון: תוספים ← Apps Script ← הדביקו את הסקריפט ← Deploy ← Web app (הרצה: אני, גישה: כל אחד) ← העתיקו את הכתובת לכאן.</div>
+      </div>
     </section>
 
     <!-- ==================== SCAN ==================== -->

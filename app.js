@@ -33,7 +33,8 @@ const state = {
   cloudScans: {},    // barcode -> total  (merged from all devices, pulled from cloud)
   dirty: {},         // barcode -> true   (scanned locally, not yet synced)
   deviceId: '',      // stable fallback id if no station name is set
-  sheetUrl: ''       // Google Sheets link the inventory is loaded/synced from
+  sheetUrl: '',      // Google Sheets link the inventory is loaded/synced from
+  writeUrl: ''       // Apps Script web-app URL for writing results back
 };
 
 const LS_KEY = 'wigsstock_v1';
@@ -812,6 +813,14 @@ function init() {
     $('#sheetLoad').addEventListener('click', () => { state.sheetUrl = sheetEl.value.trim(); save(); loadFromSheet(true); });
     if (state.sheetUrl) loadFromSheet(false);   // refresh inventory from the sheet on open
   }
+
+  // write results back to the sheet (via Apps Script)
+  const writeEl = $('#writeUrl');
+  if (writeEl) {
+    writeEl.value = state.writeUrl || '';
+    writeEl.addEventListener('change', () => { state.writeUrl = writeEl.value.trim(); save(); });
+    $('#writeBtn').addEventListener('click', () => { state.writeUrl = writeEl.value.trim(); save(); writeToSheet(); });
+  }
   $('#clearInv').addEventListener('click', () => {
     if (confirm('למחוק את המלאי שנטען?')) { state.inventory = {}; save(); renderInventoryStatus(); renderReport(); }
   });
@@ -906,6 +915,31 @@ async function loadFromSheet(alertOnError) {
   } catch (e) {
     setNote('var(--bad)', '❌ ' + e.message);
     if (alertOnError) alert('לא הצלחתי לטעון מהשיטס: ' + e.message);
+  }
+}
+
+// Write scan results (a "נסרק" count column) back into the sheet via Apps Script.
+async function writeToSheet() {
+  const note = $('#writeNote');
+  const setNote = (c, t) => { if (note) { note.style.color = c; note.textContent = t; } };
+  if (!state.writeUrl) { setNote('var(--bad)', 'הדביקי קישור Apps Script'); return; }
+  if (!state.cloudUrl) { setNote('var(--bad)', 'צריך כתובת שרת (ענן).'); return; }
+  const eff = effectiveScans();
+  const scans = {};
+  for (const k in eff) scans[k] = eff[k].count;
+  const n = Object.keys(scans).length;
+  if (!n && !confirm('אין סריקות כרגע — לכתוב עמודה ריקה?')) return;
+  setNote('var(--ink-3)', 'כותב לשיטס…');
+  try {
+    const r = await fetch(cloudBase() + '/api/writeback', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ script_url: state.writeUrl, scans })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(j.error || ('שגיאה ' + r.status));
+    setNote('var(--ok)', `✅ נכתב לשיטס — ${j.written} פאות סומנו כנסרקו (עמודה "${j.column}")`);
+  } catch (e) {
+    setNote('var(--bad)', '❌ ' + e.message);
   }
 }
 
