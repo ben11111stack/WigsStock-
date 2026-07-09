@@ -89,7 +89,11 @@
     <!-- ==================== SCAN ==================== -->
     <section id="panel-scan" class="tab">
       <div class="scanner">
-        <div id="reader"><video id="video" playsinline muted></video><div class="scan-frame"></div></div>
+        <div id="reader">
+          <video id="video" playsinline muted autoplay></video>
+          <div class="scan-frame"></div>
+          <button id="camStart" class="cam-start">📷 הקש להפעלת המצלמה</button>
+        </div>
         <p class="small muted center" id="cameraNote"></p>
         <div id="scanBanner" class="scan-banner"><div class="msg muted">פותח מצלמה…</div></div>
         <div class="scan-tools">

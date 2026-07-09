@@ -6,4 +6,4 @@ compatibility_date = "2024-11-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "wigsstock"
-database_id = "REPLACE_WITH_DATABASE_ID"
+database_id = "25c4cb65-108a-4295-8090-5c2dc9c787ec"

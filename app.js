@@ -17,6 +17,10 @@ const KNOWN_STATUSES = [
   'missing', 'other', 'personal-use', 'returned', 'sold', 'wish-list'
 ];
 
+// Deployed cloud backend — used by default so the app syncs out of the box.
+const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
+const DEFAULT_COUNT_ID = 'main';
+
 /* ---------- App state (persisted to localStorage) ---------- */
 const state = {
   session: '',       // this station's name (device)
@@ -253,50 +257,57 @@ function setupScanInput() {
  */
 let cameraOn = false, detector = null, rafId = null, zxingReader = null, cameraStream = null;
 
+function showCamStart(msg) {
+  const s = $('#camStart'); if (s) s.classList.remove('hidden');
+  if (msg !== undefined) $('#cameraNote').textContent = msg;
+}
+
 async function startCamera() {
   const btn = $('#cameraBtn');
   if (cameraOn) { stopCamera(); return; }
 
   if (!isSecureContextForCamera()) {
-    $('#cameraNote').textContent =
-      'למצלמה צריך שהאפליקציה תיפתח מכתובת אתר מאובטחת (https), למשל GitHub Pages — לא מקובץ מקומי. ' +
-      'בינתיים אפשר סורק ברקוד חיצוני (בלוטות\'/USB) או הקלדה ידנית.';
+    showCamStart('למצלמה צריך כתובת מאובטחת (https) — פתחי מהלינק, לא מקובץ מקומי. בינתיים: סורק חיצוני או הקלדה.');
     return;
   }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    $('#cameraNote').textContent = 'הדפדפן לא תומך בגישה למצלמה. השתמשי בסורק חיצוני או בהקלדה.';
+    showCamStart('הדפדפן לא תומך בגישה למצלמה. השתמשי בסורק חיצוני או בהקלדה.');
     return;
   }
 
-  $('#cameraNote').textContent = '';
   const video = $('#video');
   $('#reader').classList.remove('hidden');
+  $('#camStart').classList.add('hidden');
+  $('#cameraNote').textContent = 'מפעיל מצלמה…';
   btn.textContent = '⏹';
   cameraOn = true;
 
   try {
+    const constraints = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } };
     if ('BarcodeDetector' in window) {
       detector = new window.BarcodeDetector({
         formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar', 'qr_code']
       });
-      cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
       video.srcObject = cameraStream;
       video.setAttribute('playsinline', 'true');
       await video.play();
       scanLoop();
     } else if (window.ZXing) {
       zxingReader = new ZXing.BrowserMultiFormatReader();
-      await zxingReader.decodeFromVideoDevice(null, video, (result) => {
+      // decodeFromConstraints picks the rear camera explicitly (default can grab the front one)
+      await zxingReader.decodeFromConstraints(constraints, video, (result) => {
         if (result) recordScan(result.getText());
       });
     } else {
       throw new Error('אין תמיכה בסריקת מצלמה בדפדפן הזה');
     }
+    $('#cameraNote').textContent = '';   // running
   } catch (e) {
     cameraOn = false;
-    $('#reader').classList.add('hidden');
     btn.textContent = '📷';
-    $('#cameraNote').textContent = 'לא ניתן לגשת למצלמה: ' + (e.message || e);
+    const denied = /denied|permission|NotAllowed/i.test(e.name + ' ' + (e.message || ''));
+    showCamStart(denied ? 'הקש/י על הכפתור כדי לאשר מצלמה 📷' : 'לא ניתן לגשת למצלמה: ' + (e.message || e));
   }
 }
 
@@ -321,8 +332,8 @@ function stopCamera() {
   if (zxingReader) { try { zxingReader.reset(); } catch (e) {} zxingReader = null; }
   if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
   detector = null;
-  $('#reader').classList.add('hidden');
   $('#cameraBtn').textContent = '📷';
+  const s = $('#camStart'); if (s) s.classList.remove('hidden');
 }
 
 /* =====================================================================
@@ -654,7 +665,8 @@ function showTab(name) {
   $$('nav button').forEach(b => b.classList.toggle('active', b.id === 'tab-' + name));
   if (wasScan && name !== 'scan') stopCamera();       // free the camera when leaving
   if (name === 'report') renderReport();
-  if (name === 'scan') setTimeout(ensureCamera, 150); // open straight into the scanner
+  // start within the tap so iOS allows the camera; falls back to the overlay button
+  if (name === 'scan') ensureCamera();
 }
 
 function init() {
@@ -667,6 +679,12 @@ function init() {
 
   // stable device id fallback (used if no station name is typed)
   if (!state.deviceId) { state.deviceId = 'dev-' + Math.random().toString(36).slice(2, 8); save(); }
+
+  // default the cloud config to the deployed backend so it works out of the box
+  let cloudDefaulted = false;
+  if (!state.cloudUrl) { state.cloudUrl = DEFAULT_CLOUD_URL; cloudDefaulted = true; }
+  if (!state.countId) { state.countId = DEFAULT_COUNT_ID; cloudDefaulted = true; }
+  if (cloudDefaulted) save();
 
   // cloud sync config
   const cloudUrlEl = $('#cloudUrl'), countIdEl = $('#countId');
@@ -683,9 +701,16 @@ function init() {
       } catch (e) { alert('❌ לא הצלחתי להתחבר: ' + e.message); }
     });
     $('#cloudPull').addEventListener('click', () => { if (cloudEnabled()) pullCloud(); else alert('הגדירי כתובת שרת ושם ספירה'); });
-    setCloudStatus();
-    startPolling();
-    if (cloudEnabled()) pullCloud();
+
+    if (cloudEnabled()) {
+      if (cloudDefaulted) markAllDirty();   // push any pre-existing local scans up once
+      setCloudStatus('syncing');
+      startPolling();
+      pullCloud();
+      if (Object.keys(state.dirty).length) pushCloud();
+    } else {
+      setCloudStatus();
+    }
   }
   // flush the offline queue the moment the network returns
   window.addEventListener('online', () => { if (cloudEnabled() && Object.keys(state.dirty).length) pushCloud(); });
@@ -721,6 +746,7 @@ function init() {
   // scanning
   setupScanInput();
   $('#cameraBtn').addEventListener('click', startCamera);
+  $('#camStart').addEventListener('click', startCamera);   // tap-to-start (required on iOS)
   $('#manualToggle').addEventListener('click', () => {
     const w = $('#manualWrap');
     if (w.classList.contains('hidden')) {

@@ -180,6 +180,13 @@ details summary { cursor: pointer; }
   box-shadow: 0 0 8px 1px color-mix(in oklab, var(--primary) 60%, transparent);
 }
 #reader.hidden { display: none; }
+.cam-start {
+  position: absolute; inset: 0; margin: auto; width: max-content; height: max-content;
+  padding: 12px 18px; border: none; border-radius: 12px; cursor: pointer;
+  background: rgba(255,255,255,.94); color: var(--ink); font-family: inherit;
+  font-size: 15px; font-weight: 600; box-shadow: 0 4px 16px rgba(0,0,0,.3);
+}
+.cam-start.hidden { display: none; }
 
 .scan-tools {
   display: flex; align-items: center; gap: 10px; margin-top: 10px;
