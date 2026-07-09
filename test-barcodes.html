@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WigsStock · ברקודים לבדיקה</title>
+  <style>
+    body { font-family: system-ui, Rubik, Arial, sans-serif; direction: rtl; background:#f4f5fb; color:#1a1f36; margin:0; padding:20px; }
+    .wrap { max-width: 800px; margin: 0 auto; }
+    h1 { font-size: 20px; }
+    .muted { color:#555; font-size:13px; }
+    .controls { background:#fff; border:1px solid #ddd; border-radius:10px; padding:14px; margin:14px 0; }
+    input, button { font-size:15px; padding:8px 10px; border:1px solid #ccc; border-radius:8px; }
+    button { background:#6c8cff; color:#fff; border:none; cursor:pointer; font-weight:700; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px; }
+    .bc { background:#fff; border:1px solid #ddd; border-radius:10px; padding:14px; text-align:center; }
+    .bc svg { width:100%; height:70px; }
+    .bc .lbl { font-family:monospace; font-size:18px; letter-spacing:3px; margin-top:6px; font-weight:700; }
+    .status { font-size:12px; color:#666; }
+    @media print { .controls, .no-print { display:none; } body { background:#fff; } .bc { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>💇‍♀️ ברקודים לבדיקה (Code 128)</h1>
+    <p class="muted">דף לבדיקת האפליקציה לפני המלאי האמיתי. הדפיסי / הציגי על מסך, וסרקי עם האפליקציה או עם סורק חיצוני.
+      הברקודים תואמים ל-<code>sample-inventory.csv</code>.</p>
+
+    <div class="controls no-print">
+      <label>כמה ברקודים לייצר: <input id="count" type="number" value="12" min="1" max="200" style="width:70px"></label>
+      <label>מספר התחלתי: <input id="start" type="number" value="10001" style="width:100px"></label>
+      <button onclick="render()">צור</button>
+      <button onclick="window.print()">🖨️ הדפס</button>
+    </div>
+
+    <div id="grid" class="grid"></div>
+  </div>
+
+<script>
+/* ---- Minimal Code128-B encoder -> SVG (digits are valid in code set B) ---- */
+const C128 = [ /* patterns for values 0..106, each 6 modules (bar,space,...) */
+"212222","222122","222221","121223","121322","131222","122213","122312","132212","221213","221312","231212","112232","122132","122231","113222","123122","123221","223211","221132","221231","213212","223112","312131","311222","321122","321221","312212","322112","322211","212123","212321","232121","111323","131123","131321","112313","132113","132311","211313","231113","231311","112133","112331","132131","113123","113321","133121","313121","211331","231131","213113","213311","213131","311123","311321","331121","312113","312311","332111","314111","221411","431111","111224","111422","121124","121421","141122","141221","112214","112412","122114","122411","142112","142211","241211","221114","413111","241112","134111","111242","121142","121241","114212","124112","124211","411212","421112","421211","212141","214121","412121","111143","111341","131141","114113","114311","411113","411311","113141","114131","311141","411131","211412","211214","211232","2331112"];
+function encode128B(text){
+  let sum=104, codes=[104]; // Start B
+  for(let i=0;i<text.length;i++){ const v=text.charCodeAt(i)-32; codes.push(v); sum+=v*(i+1); }
+  codes.push(sum%103); // checksum
+  codes.push(106);     // stop
+  return codes.map(c=>C128[c]).join('');
+}
+function svgFor(text){
+  const pat=encode128B(text);
+  let x=0, rects='', W=0;
+  for(let i=0;i<pat.length;i++){ const w=+pat[i]; if(i%2===0) rects+=`<rect x="${x}" y="0" width="${w}" height="100"/>`; x+=w; }
+  W=x;
+  return `<svg viewBox="0 0 ${W} 100" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><rect width="${W}" height="100" fill="#fff"/><g fill="#000">${rects}</g></svg>`;
+}
+function render(){
+  const n=+document.getElementById('count').value;
+  const start=+document.getElementById('start').value;
+  const grid=document.getElementById('grid'); grid.innerHTML='';
+  // statuses matching sample-inventory.csv logic (every 5th "sold", every 7th "missing")
+  for(let i=0;i<n;i++){
+    const code=String(start+i);
+    let status='in-stock';
+    if(i%5===0) status='sold'; else if(i%7===0) status='returned';
+    const div=document.createElement('div'); div.className='bc';
+    div.innerHTML=svgFor(code)+`<div class="lbl">${code}</div><div class="status">שיטס: ${status}</div>`;
+    grid.appendChild(div);
+  }
+}
+render();
+</script>
+</body>
+</html>
