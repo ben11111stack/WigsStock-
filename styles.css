@@ -72,6 +72,17 @@ b, strong { font-weight: 600; }
   padding: 6px 8px;
 }
 
+/* ---------- Install banner ---------- */
+.install-bar {
+  display: flex; align-items: center; gap: 10px;
+  margin: 8px 14px 0; padding: 9px 10px 9px 12px;
+  border: 1px solid color-mix(in oklab, var(--primary) 30%, var(--line));
+  background: var(--primary-weak); border-radius: var(--r);
+  font-size: 13px; color: var(--ink);
+}
+.install-bar .install-actions { margin-inline-start: auto; display: flex; align-items: center; gap: 8px; }
+.install-bar .icon-btn { width: 32px; height: 32px; font-size: 14px; background: transparent; border-color: transparent; color: var(--ink-3); }
+
 /* ---------- Content shell ---------- */
 main { max-width: var(--maxw); margin: 0 auto; }
 .tab { display: none; padding: 8px 0 4px; }

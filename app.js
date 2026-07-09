@@ -464,6 +464,58 @@ function mergeScans(text) {
 }
 
 /* =====================================================================
+ * Install to home screen (PWA)
+ * Android/Chrome: fires beforeinstallprompt -> we show a real Install button.
+ * iOS/Safari: no such API -> we can only show the manual instruction.
+ * ===================================================================== */
+let deferredPrompt = null;
+const INSTALL_DISMISS = 'wigsstock_install_dismissed';
+
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+function isIOS() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+}
+function showInstallBar(mode) {
+  if (isStandalone() || localStorage.getItem(INSTALL_DISMISS)) return;
+  const bar = $('#installBar'), btn = $('#installBtn'), txt = $('#installText');
+  if (!bar) return;
+  if (mode === 'ios') {
+    btn.classList.add('hidden');
+    txt.innerHTML = 'להתקנה: שיתוף ⬆️ ← "הוסף למסך הבית"';
+  } else {
+    btn.classList.remove('hidden');
+    txt.textContent = 'התקן את האפליקציה למסך הבית 📲';
+  }
+  bar.classList.remove('hidden');
+}
+function setupInstall() {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    showInstallBar('android');
+  });
+  window.addEventListener('appinstalled', () => {
+    $('#installBar').classList.add('hidden');
+    deferredPrompt = null;
+  });
+  $('#installBtn').addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    $('#installBar').classList.add('hidden');
+  });
+  $('#installClose').addEventListener('click', () => {
+    $('#installBar').classList.add('hidden');
+    try { localStorage.setItem(INSTALL_DISMISS, '1'); } catch (e) {}
+  });
+  // iOS has no install event — show the manual hint on Safari (not already installed)
+  if (isIOS() && !isStandalone()) showInstallBar('ios');
+}
+
+/* =====================================================================
  * Tabs + wiring
  * ===================================================================== */
 function ensureCamera() { if (!cameraOn) startCamera(); }
@@ -517,6 +569,9 @@ function init() {
   $('#clearInv').addEventListener('click', () => {
     if (confirm('למחוק את המלאי שנטען?')) { state.inventory = {}; save(); renderInventoryStatus(); renderReport(); }
   });
+
+  // install to home screen
+  setupInstall();
 
   // scanning
   setupScanInput();
