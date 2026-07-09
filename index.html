@@ -2,59 +2,51 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <meta name="theme-color" content="#12162a">
-  <title>WigsStock · ספירת מלאי</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#ffffff">
+  <title>ספירת מלאי · WigsStock</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;620;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header>
-    <div class="head-row">
-      <span class="logo">💇‍♀️</span>
-      <h1>WigsStock · ספירת מלאי</h1>
-      <span class="session">
-        עמדה:
-        <input id="sessionName" placeholder="שם/קומה" maxlength="20">
-      </span>
+  <header class="hdr">
+    <div class="hdr-logo">💇‍♀️</div>
+    <div class="hdr-title">
+      <b>ספירת מלאי</b>
+      <small>WigsStock</small>
     </div>
-    <nav>
-      <button id="tab-load">📥 מלאי</button>
-      <button id="tab-scan" class="active">📷 סריקה</button>
-      <button id="tab-report">📊 דוח</button>
-      <button id="tab-export">💾 ייצוא</button>
-    </nav>
+    <div class="hdr-spacer"></div>
+    <label class="station">עמדה<input id="sessionName" placeholder="שם/קומה" maxlength="20"></label>
   </header>
 
-  <main class="wrap">
+  <main>
 
     <!-- ==================== LOAD ==================== -->
     <section id="panel-load" class="tab">
+      <div class="sec-head" style="padding-inline:18px">טעינת מלאי מגוגל שיטס</div>
       <div class="card">
-        <h2>טעינת המלאי מגוגל שיטס</h2>
-        <p class="muted small">
-          בגוגל שיטס: קובץ ← הורדה ← <b>ערכים מופרדים בפסיקים (CSV)</b>.
-          צריך עמודת ברקוד ועמודת סטטוס. הכותרות מזוהות אוטומטית.
-        </p>
-        <label class="file-label" for="invFile">📄 בחרי קובץ CSV<br><span class="small">או גררי לכאן</span></label>
+        <h2>קובץ CSV</h2>
+        <p class="muted small">בגוגל שיטס: קובץ ← הורדה ← ערכים מופרדים בפסיקים (CSV). צריך עמודת ברקוד ועמודת סטטוס — הכותרות מזוהות אוטומטית.</p>
+        <div class="spacer"></div>
+        <label class="file-label" for="invFile">בחרי קובץ CSV · או גררי לכאן</label>
         <input type="file" id="invFile" accept=".csv,text/csv">
 
         <details>
-          <summary class="muted small" style="cursor:pointer">או הדביקי את הנתונים ידנית</summary>
+          <summary class="muted small">או הדביקי את הנתונים ידנית</summary>
           <div class="spacer"></div>
-          <textarea id="invPaste" placeholder="barcode,status&#10;10234,in-stock&#10;10235,sold&#10;10236,in-stock"></textarea>
+          <textarea id="invPaste" placeholder="barcode,status&#10;10234,in-stock&#10;10235,sold"></textarea>
           <div class="spacer"></div>
           <button class="btn secondary" id="invPasteBtn">טען מהטקסט</button>
         </details>
 
-        <p class="small" id="importNote" style="color:var(--ok);margin-top:10px"></p>
-        <div class="hint">
-          סטטוסים נתמכים: barter · consignment · fix-return · <b>in-stock</b> · inventory-reserved ·
-          missing · other · personal-use · returned · sold · wish-list
-        </div>
+        <p class="small" id="importNote" style="color:var(--ok);margin:10px 0 0"></p>
+        <div class="hint">סטטוסים נתמכים: barter · consignment · fix-return · <b>in-stock</b> · inventory-reserved · missing · other · personal-use · returned · sold · wish-list</div>
       </div>
 
+      <div class="sec-head" style="padding-inline:18px">מצב המלאי</div>
       <div class="card">
-        <h2>מצב המלאי</h2>
         <div id="invStatus"></div>
         <div class="spacer"></div>
         <button class="btn danger small-btn" id="clearInv">מחק מלאי</button>
@@ -62,32 +54,27 @@
     </section>
 
     <!-- ==================== SCAN ==================== -->
-    <section id="panel-scan" class="tab active">
+    <section id="panel-scan" class="tab">
       <div class="card">
         <h2>סריקה</h2>
         <div id="scanBanner" class="scan-banner"><div class="msg muted">מוכן לסריקה…</div></div>
-
-        <input id="scanInput" class="scan-input" inputmode="numeric" autocomplete="off"
-               placeholder="הברקוד מופיע כאן" autofocus>
-        <div class="hint">
-          עם סורק ברקוד חיצוני (USB/בלוטות'): פשוט סרקי — הברקוד ייכנס לבד ו-Enter ירשום אותו.
-          אפשר גם להקליד ידנית וללחוץ Enter.
-        </div>
+        <input id="scanInput" class="scan-input" inputmode="numeric" autocomplete="off" placeholder="הברקוד מופיע כאן">
+        <div class="hint">סורק חיצוני (USB/בלוטות'): פשוט סרקי — הברקוד נכנס לבד ו-Enter רושם. אפשר גם להקליד ידנית + Enter.</div>
         <div class="spacer"></div>
         <div class="row">
           <button class="btn secondary small-btn" id="manualAdd">רשום ידנית</button>
-          <button class="btn" id="cameraBtn">📷 סרוק עם המצלמה</button>
+          <button class="btn" id="cameraBtn">סרוק עם המצלמה</button>
         </div>
-        <p class="small muted" id="cameraNote"></p>
+        <p class="small muted" id="cameraNote" style="margin:8px 0 0"></p>
         <div id="reader" class="hidden"><video id="video" playsinline muted></video></div>
       </div>
 
       <div class="card">
         <div class="stats">
           <div class="stat total"><div class="num" id="scanCount">0</div><div class="lbl">נסרקו</div></div>
-          <div class="stat ok"><div class="num" id="scanOk">0</div><div class="lbl">✅ תקין</div></div>
-          <div class="stat warn"><div class="num" id="scanWarn">0</div><div class="lbl">⚠️ מסומן אחרת</div></div>
-          <div class="stat unknown"><div class="num" id="scanUnknown">0</div><div class="lbl">❓ לא מוכר</div></div>
+          <div class="stat ok"><div class="num" id="scanOk">0</div><div class="lbl">תקין</div></div>
+          <div class="stat warn"><div class="num" id="scanWarn">0</div><div class="lbl">מסומן אחרת</div></div>
+          <div class="stat unknown"><div class="num" id="scanUnknown">0</div><div class="lbl">לא מוכר</div></div>
         </div>
         <div class="spacer"></div>
         <button class="btn danger small-btn" id="resetScans">אפס סריקות</button>
@@ -101,30 +88,47 @@
 
     <!-- ==================== EXPORT ==================== -->
     <section id="panel-export" class="tab">
+      <div class="sec-head" style="padding-inline:18px">ייצוא תוצאות</div>
       <div class="card">
-        <h2>ייצוא תוצאות</h2>
-        <p class="muted small">כל הקבצים ב-CSV — אפשר לפתוח בגוגל שיטס / אקסל.</p>
-        <button class="btn" id="expFull">📊 דוח התאמה מלא</button>
+        <p class="muted small">כל הקבצים ב-CSV — נפתחים בגוגל שיטס / אקסל.</p>
         <div class="spacer"></div>
-        <button class="btn secondary" id="expUpdates">✏️ עדכוני סטטוס מוצעים</button>
+        <button class="btn" id="expFull">דוח התאמה מלא</button>
         <div class="spacer"></div>
-        <button class="btn ghost" id="expScans">📃 סריקות גולמיות (גיבוי / מיזוג)</button>
-        <div class="hint">
-          <b>דוח התאמה</b> — כל פאה עם הקטגוריה שלה.<br>
-          <b>עדכוני סטטוס</b> — רשימת התיקונים להחזרה לשיטס (למשל sold ← in-stock).<br>
-          <b>סריקות גולמיות</b> — גיבוי, ולמיזוג בין כמה מכשירים.
-        </div>
+        <button class="btn secondary" id="expUpdates">עדכוני סטטוס מוצעים</button>
+        <div class="spacer"></div>
+        <button class="btn ghost" id="expScans">סריקות גולמיות (גיבוי / מיזוג)</button>
+        <div class="hint"><b>דוח התאמה</b> — כל פאה עם הקטגוריה שלה.<br><b>עדכוני סטטוס</b> — התיקונים להחזרה לשיטס (sold ← in-stock).<br><b>סריקות גולמיות</b> — גיבוי, ולמיזוג בין מכשירים.</div>
       </div>
 
+      <div class="sec-head" style="padding-inline:18px">מיזוג ממכשיר אחר</div>
       <div class="card">
-        <h2>מיזוג ממכשיר אחר</h2>
         <p class="muted small">אם כמה עובדות סרקו במקביל — ייצאי "סריקות גולמיות" מכל מכשיר ומזגי כאן.</p>
-        <label class="file-label" for="mergeFile">📥 מזגי קובץ סריקות גולמיות</label>
+        <div class="spacer"></div>
+        <label class="file-label" for="mergeFile">מזגי קובץ סריקות גולמיות</label>
         <input type="file" id="mergeFile" accept=".csv,text/csv">
       </div>
     </section>
 
   </main>
+
+  <nav class="bottomnav">
+    <button id="tab-load">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+      מלאי
+    </button>
+    <button id="tab-scan">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>
+      סריקה
+    </button>
+    <button id="tab-report">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="13" y="7" width="3" height="10"/></svg>
+      דוח
+    </button>
+    <button id="tab-export">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+      ייצוא
+    </button>
+  </nav>
 
   <script src="zxing.min.js"></script>
   <script src="app.js"></script>
