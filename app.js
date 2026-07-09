@@ -754,6 +754,13 @@ function init() {
     const t = $('#invPaste').value.trim();
     if (t) handleImport(t);
   });
+  $('#loadSample').addEventListener('click', async () => {
+    try {
+      const r = await fetch('sample-inventory.csv', { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      handleImport(await r.text());
+    } catch (e) { alert('לא הצלחתי לטעון דוגמה: ' + e.message); }
+  });
   $('#clearInv').addEventListener('click', () => {
     if (confirm('למחוק את המלאי שנטען?')) { state.inventory = {}; save(); renderInventoryStatus(); renderReport(); }
   });
