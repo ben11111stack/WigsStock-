@@ -66,6 +66,24 @@
         <div class="spacer"></div>
         <button class="btn danger small-btn" id="clearInv">מחק מלאי</button>
       </div>
+
+      <div class="sec-head" style="padding-inline:18px">סנכרון ענן</div>
+      <div class="card">
+        <p class="muted small">שומר את הסריקות בענן (לא רק במכשיר) וממזג בין כל העמדות. אם משאירים ריק — עובד מקומית בלבד.</p>
+        <div class="spacer"></div>
+        <label class="fld">כתובת השרת (Worker URL)
+          <input id="cloudUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://wigsstock-sync....workers.dev">
+        </label>
+        <label class="fld">שם ספירה משותף (זהה בכל העמדות)
+          <input id="countId" autocomplete="off" placeholder="יולי-2026">
+        </label>
+        <div id="cloudStatus" style="margin:6px 0 10px"></div>
+        <div class="row">
+          <button class="btn secondary small-btn" id="cloudTest">בדוק חיבור</button>
+          <button class="btn ghost small-btn" id="cloudPull">משוך מהענן</button>
+        </div>
+        <div class="hint">כל עמדה מקבלת שם משלה בשדה "עמדה" למעלה. אותו "שם ספירה" בכל המכשירים = ספירה משותפת. הגדרת השרת: ראו <b>worker/README.md</b>.</div>
+      </div>
     </section>
 
     <!-- ==================== SCAN ==================== -->

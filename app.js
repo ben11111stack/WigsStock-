@@ -19,9 +19,14 @@ const KNOWN_STATUSES = [
 
 /* ---------- App state (persisted to localStorage) ---------- */
 const state = {
-  session: '',
-  inventory: {},   // barcode -> status   (from the sheet)
-  scans: {}        // barcode -> { count, first }  (physically scanned)
+  session: '',       // this station's name (device)
+  inventory: {},     // barcode -> status   (from the sheet)
+  scans: {},         // barcode -> { count, first }  (this device's scans)
+  cloudUrl: '',      // Cloudflare Worker base URL ('' = local only)
+  countId: '',       // shared inventory-count id across stations
+  cloudScans: {},    // barcode -> total  (merged from all devices, pulled from cloud)
+  dirty: {},         // barcode -> true   (scanned locally, not yet synced)
+  deviceId: ''       // stable fallback id if no station name is set
 };
 
 const LS_KEY = 'wigsstock_v1';
@@ -115,8 +120,22 @@ function importInventory(text) {
 /* =====================================================================
  * Reconciliation
  * ===================================================================== */
+/* Scans used for the report/stats: this device merged with the cloud total
+ * (max per barcode, so nothing double-counts and other stations show up). */
+function effectiveScans() {
+  if (!cloudEnabled() || !state.cloudScans) return state.scans;
+  const out = {};
+  const keys = new Set([...Object.keys(state.scans), ...Object.keys(state.cloudScans)]);
+  for (const k of keys) {
+    const local = state.scans[k] ? state.scans[k].count : 0;
+    const cloud = state.cloudScans[k] || 0;
+    out[k] = { count: Math.max(local, cloud), first: state.scans[k] ? state.scans[k].first : 0 };
+  }
+  return out;
+}
+
 function reconcile() {
-  const inv = state.inventory, scans = state.scans;
+  const inv = state.inventory, scans = effectiveScans();
   const invKeys = Object.keys(inv);
   const scanKeys = Object.keys(scans);
 
@@ -167,6 +186,7 @@ function recordScan(rawCode) {
   const existing = state.scans[code];
   if (existing) existing.count++;
   else state.scans[code] = { count: 1, first: now };
+  if (cloudEnabled()) { state.dirty[code] = true; schedulePush(); }
   save();
 
   showScanFeedback(code, !!existing);
@@ -464,6 +484,106 @@ function mergeScans(text) {
 }
 
 /* =====================================================================
+ * Cloud sync (Cloudflare Worker)
+ * Local-first: scans always land in localStorage instantly; the cloud is
+ * synced in the background with an offline-safe retry. Pushing a device's
+ * absolute counts is idempotent, so retries never double-count.
+ * ===================================================================== */
+function cloudEnabled() { return !!(state.cloudUrl && state.countId); }
+function cloudBase() { return state.cloudUrl.replace(/\/+$/, ''); }
+function deviceId() { return (state.session && state.session.trim()) || state.deviceId; }
+
+let syncTimer = null, retryTimer = null, syncing = false, pollTimer = null;
+
+function schedulePush() {
+  if (!cloudEnabled()) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(pushCloud, 700);
+}
+
+async function pushCloud() {
+  if (!cloudEnabled() || syncing) return;
+  const barcodes = Object.keys(state.dirty);
+  if (!barcodes.length) return;
+  syncing = true;
+  setCloudStatus('syncing');
+  const scans = {};
+  barcodes.forEach(b => { if (state.scans[b]) scans[b] = state.scans[b].count; });
+  try {
+    const res = await fetch(cloudBase() + '/api/sync', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count_id: state.countId, device: deviceId(), scans })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    barcodes.forEach(b => delete state.dirty[b]);   // only clear what we sent
+    save();
+    setCloudStatus('ok');
+    pullCloud();
+  } catch (e) {
+    setCloudStatus('offline');
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(pushCloud, 5000);       // keep retrying; scans persist locally
+  } finally {
+    syncing = false;
+    if (Object.keys(state.dirty).length && navigator.onLine) schedulePush();
+  }
+}
+
+async function pullCloud() {
+  if (!cloudEnabled()) return;
+  try {
+    const res = await fetch(cloudBase() + '/api/scans?count_id=' + encodeURIComponent(state.countId));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    state.cloudScans = data.scans || {};
+    save();
+    renderReport(); renderScanStats();
+    setCloudStatus('ok', data);
+  } catch (e) { /* keep last known cloud data */ }
+}
+
+function markAllDirty() { Object.keys(state.scans).forEach(b => { state.dirty[b] = true; }); }
+
+function startPolling() {
+  clearInterval(pollTimer);
+  if (!cloudEnabled()) return;
+  pollTimer = setInterval(() => {
+    if (!cloudEnabled()) return;
+    if (Object.keys(state.dirty).length) pushCloud();
+    pullCloud();
+  }, 15000);
+}
+
+function setCloudStatus(kind, data) {
+  const el = $('#cloudStatus');
+  if (!el) return;
+  if (!cloudEnabled()) { el.innerHTML = '<span class="muted small">מקומי בלבד — לא מוגדר ענן.</span>'; return; }
+  const map = {
+    ok: ['ok', '✅ מסונכרן'],
+    syncing: ['dup', '⏳ מסנכרן…'],
+    offline: ['warn', '⚠️ אין חיבור — יסונכרן אוטומטית כשתחזור רשת']
+  };
+  const [cls, label] = map[kind] || map.ok;
+  const extra = (kind === 'ok' && data) ? ` · ${data.barcodes || 0} ברקודים · ${data.devices || 0} עמדות` : '';
+  const pend = Object.keys(state.dirty).length;
+  const pendTxt = pend ? ` · ${pend} ממתינים` : '';
+  el.innerHTML = `<span class="tag ${cls === 'ok' ? 'instock' : 'other'}">${label}</span><span class="muted small">${extra}${pendTxt}</span>`;
+}
+
+function applyCloudConfig() {
+  save();
+  if (cloudEnabled()) {
+    markAllDirty();
+    setCloudStatus('syncing');
+    pushCloud();
+    startPolling();
+  } else {
+    clearInterval(pollTimer);
+    setCloudStatus();
+  }
+}
+
+/* =====================================================================
  * Install to home screen (PWA)
  * Android/Chrome: fires beforeinstallprompt -> we show a real Install button.
  * iOS/Safari: no such API -> we can only show the manual instruction.
@@ -540,10 +660,35 @@ function showTab(name) {
 function init() {
   load();
 
-  // session name
+  // session / station name
   const sess = $('#sessionName');
   sess.value = state.session || '';
-  sess.addEventListener('input', () => { state.session = sess.value; save(); });
+  sess.addEventListener('input', () => { state.session = sess.value; save(); setCloudStatus(); });
+
+  // stable device id fallback (used if no station name is typed)
+  if (!state.deviceId) { state.deviceId = 'dev-' + Math.random().toString(36).slice(2, 8); save(); }
+
+  // cloud sync config
+  const cloudUrlEl = $('#cloudUrl'), countIdEl = $('#countId');
+  if (cloudUrlEl) {
+    cloudUrlEl.value = state.cloudUrl || '';
+    countIdEl.value = state.countId || '';
+    cloudUrlEl.addEventListener('change', () => { state.cloudUrl = cloudUrlEl.value.trim(); applyCloudConfig(); });
+    countIdEl.addEventListener('change', () => { state.countId = countIdEl.value.trim(); applyCloudConfig(); });
+    $('#cloudTest').addEventListener('click', async () => {
+      if (!state.cloudUrl) { alert('הזיני קודם כתובת שרת'); return; }
+      try {
+        const r = await fetch(cloudBase() + '/api/health');
+        alert(r.ok ? '✅ החיבור תקין' : '⚠️ השרת ענה עם שגיאה ' + r.status);
+      } catch (e) { alert('❌ לא הצלחתי להתחבר: ' + e.message); }
+    });
+    $('#cloudPull').addEventListener('click', () => { if (cloudEnabled()) pullCloud(); else alert('הגדירי כתובת שרת ושם ספירה'); });
+    setCloudStatus();
+    startPolling();
+    if (cloudEnabled()) pullCloud();
+  }
+  // flush the offline queue the moment the network returns
+  window.addEventListener('online', () => { if (cloudEnabled() && Object.keys(state.dirty).length) pushCloud(); });
 
   // tabs (each switch pushes history so the back button walks tabs, not out of the app)
   $$('nav button').forEach(b => b.addEventListener('click', () => navigate(b.id.replace('tab-', ''))));
@@ -590,7 +735,7 @@ function init() {
   // reset scans
   $('#resetScans').addEventListener('click', () => {
     if (confirm('לאפס את כל הסריקות? (המלאי יישאר)')) {
-      state.scans = {}; save(); renderReport(); renderScanStats();
+      state.scans = {}; state.dirty = {}; save(); renderReport(); renderScanStats();
       $('#scanBanner').className = 'scan-banner';
       $('#scanBanner').innerHTML = '<div class="msg muted">מוכן לסריקה…</div>';
     }
