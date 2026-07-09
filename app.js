@@ -34,7 +34,8 @@ const state = {
   dirty: {},         // barcode -> true   (scanned locally, not yet synced)
   deviceId: '',      // stable fallback id if no station name is set
   sheetUrl: '',      // Google Sheets link the inventory is loaded/synced from
-  writeUrl: ''       // Apps Script web-app URL for writing results back
+  writeUrl: '',      // Apps Script web-app URL for writing results back
+  lastResetSeen: 0   // cloud reset generation this device has applied
 };
 
 const LS_KEY = 'wigsstock_v1';
@@ -606,6 +607,11 @@ async function pullCloud() {
     const res = await fetch(cloudBase() + '/api/scans?count_id=' + encodeURIComponent(state.countId));
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
+    // a reset elsewhere clears this device's local scans too
+    if (data.reset_at && data.reset_at > (state.lastResetSeen || 0)) {
+      state.lastResetSeen = data.reset_at;
+      state.scans = {}; state.dirty = {};
+    }
     state.cloudScans = data.scans || {};
     state.cloudDevices = data.devices || 0;
     save();
@@ -856,10 +862,12 @@ function init() {
     state.scans = {}; state.dirty = {}; state.cloudScans = {}; save();
     if (cloudEnabled()) {
       try {
-        await fetch(cloudBase() + '/api/reset', {
+        const rr = await fetch(cloudBase() + '/api/reset', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ count_id: state.countId })
         });
+        const rj = await rr.json().catch(() => ({}));
+        if (rj.reset_at) { state.lastResetSeen = rj.reset_at; save(); }   // don't re-trigger on our own reset
       } catch (e) { alert('אופס מקומי בוצע, אך לא הצלחתי לאפס בענן: ' + e.message); }
     }
     renderReport(); renderScanStats();

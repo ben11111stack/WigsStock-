@@ -105,12 +105,18 @@ export default {
       }
 
       // Wipe an entire count (all devices) — used by the app's reset button.
+      // Also bump reset_at so every station clears its local scans on next pull.
       if (path === '/api/reset' && req.method === 'POST') {
         const body = await req.json();
         const countId = (body.count_id || '').trim();
         if (!countId) return json({ error: 'count_id required' }, 400);
         const r = await env.DB.prepare('DELETE FROM scans WHERE count_id = ?1').bind(countId).run();
-        return json({ ok: true, deleted: (r.meta && r.meta.changes) || 0 });
+        const now = Date.now();
+        await env.DB.prepare(
+          `INSERT INTO meta (count_id, reset_at, updated_at) VALUES (?1, ?2, ?3)
+           ON CONFLICT(count_id) DO UPDATE SET reset_at = excluded.reset_at, updated_at = excluded.updated_at`
+        ).bind(countId, now, now).run();
+        return json({ ok: true, deleted: (r.meta && r.meta.changes) || 0, reset_at: now });
       }
 
       // Register the shared inventory source (Google Sheet link) for a count,
@@ -139,13 +145,13 @@ export default {
           .prepare(`SELECT COUNT(DISTINCT device) AS n FROM scans WHERE count_id = ?1`)
           .bind(countId).first();
 
-        let sheetUrl = '';
+        let sheetUrl = '', resetAt = 0;
         try {
-          const m = await env.DB.prepare(`SELECT sheet_url FROM meta WHERE count_id = ?1`).bind(countId).first();
-          if (m && m.sheet_url) sheetUrl = m.sheet_url;
+          const m = await env.DB.prepare(`SELECT sheet_url, reset_at FROM meta WHERE count_id = ?1`).bind(countId).first();
+          if (m) { sheetUrl = m.sheet_url || ''; resetAt = m.reset_at || 0; }
         } catch (e) { /* meta table may not exist yet */ }
 
-        return json({ ok: true, scans, barcodes: Object.keys(scans).length, devices: dev ? dev.n : 0, sheet_url: sheetUrl });
+        return json({ ok: true, scans, barcodes: Object.keys(scans).length, devices: dev ? dev.n : 0, sheet_url: sheetUrl, reset_at: resetAt });
       }
 
       return json({ error: 'not found', path }, 404);
