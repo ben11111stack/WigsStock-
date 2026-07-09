@@ -249,17 +249,32 @@ function setupScanInput() {
 }
 
 /* ---------- Camera scanning ----------
- * Uses the native BarcodeDetector on Android/Chrome (fast), and falls back
- * to ZXing on iPhone/Safari and anywhere else that lacks BarcodeDetector.
+ * Uses ZXing on every platform (consistent, and the native BarcodeDetector
+ * proved unreliable on some Android builds). TRY_HARDER + an explicit 1D
+ * format list are what actually decode real-world barcodes.
  * Camera access requires a secure context (https:// or localhost) — opening
  * the file directly from disk on a phone will NOT get the camera; host it
  * (e.g. GitHub Pages) for camera scanning. Hardware scanners work anywhere.
  */
-let cameraOn = false, detector = null, rafId = null, zxingReader = null, cameraStream = null;
+let cameraOn = false, zxingReader = null;
 
 function showCamStart(msg) {
   const s = $('#camStart'); if (s) s.classList.remove('hidden');
   if (msg !== undefined) $('#cameraNote').textContent = msg;
+}
+
+function setBannerLive() {
+  const b = $('#scanBanner');
+  if (b) { b.className = 'scan-banner'; b.innerHTML = '<div class="msg muted">📷 מצלמה פעילה — כוונו ברקוד למסגרת</div>'; }
+}
+
+function makeReader() {
+  const hints = new Map();
+  const F = ZXing.BarcodeFormat;
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,
+    [F.CODE_128, F.CODE_39, F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.ITF, F.CODABAR, F.QR_CODE]);
+  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);   // critical for real barcodes
+  return new ZXing.BrowserMultiFormatReader(hints, 150);
 }
 
 async function startCamera() {
@@ -270,7 +285,7 @@ async function startCamera() {
     showCamStart('למצלמה צריך כתובת מאובטחת (https) — פתחי מהלינק, לא מקובץ מקומי. בינתיים: סורק חיצוני או הקלדה.');
     return;
   }
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  if (!window.ZXing || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     showCamStart('הדפדפן לא תומך בגישה למצלמה. השתמשי בסורק חיצוני או בהקלדה.');
     return;
   }
@@ -278,31 +293,23 @@ async function startCamera() {
   const video = $('#video');
   $('#reader').classList.remove('hidden');
   $('#camStart').classList.add('hidden');
-  $('#cameraNote').textContent = 'מפעיל מצלמה…';
+  $('#cameraNote').textContent = '';
   btn.textContent = '⏹';
   cameraOn = true;
+  setBannerLive();   // show immediately so it never looks stuck on "opening…"
 
-  try {
-    const constraints = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } };
-    if ('BarcodeDetector' in window) {
-      detector = new window.BarcodeDetector({
-        formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf', 'codabar', 'qr_code']
-      });
-      cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
-      video.srcObject = cameraStream;
-      video.setAttribute('playsinline', 'true');
-      await video.play();
-      scanLoop();
-    } else if (window.ZXing) {
-      zxingReader = new ZXing.BrowserMultiFormatReader();
-      // decodeFromConstraints picks the rear camera explicitly (default can grab the front one)
-      await zxingReader.decodeFromConstraints(constraints, video, (result) => {
-        if (result) recordScan(result.getText());
-      });
-    } else {
-      throw new Error('אין תמיכה בסריקת מצלמה בדפדפן הזה');
+  const constraints = {
+    video: {
+      facingMode: { ideal: 'environment' },
+      width: { ideal: 1920 }, height: { ideal: 1080 },
+      advanced: [{ focusMode: 'continuous' }]
     }
-    $('#cameraNote').textContent = '';   // running
+  };
+  try {
+    zxingReader = makeReader();
+    await zxingReader.decodeFromConstraints(constraints, video, (result) => {
+      if (result) recordScan(result.getText());
+    });
   } catch (e) {
     cameraOn = false;
     btn.textContent = '📷';
@@ -311,27 +318,13 @@ async function startCamera() {
   }
 }
 
-async function scanLoop() {
-  const video = $('#video');
-  if (!cameraOn || !detector) return;
-  try {
-    const codes = await detector.detect(video);
-    if (codes.length) recordScan(codes[0].rawValue);
-  } catch (e) { /* frame not ready */ }
-  rafId = requestAnimationFrame(() => setTimeout(scanLoop, 120));
-}
-
 function isSecureContextForCamera() {
-  return window.isSecureContext ||
-    ['localhost', '127.0.0.1'].includes(location.hostname);
+  return window.isSecureContext || ['localhost', '127.0.0.1'].includes(location.hostname);
 }
 
 function stopCamera() {
   cameraOn = false;
-  if (rafId) cancelAnimationFrame(rafId);
   if (zxingReader) { try { zxingReader.reset(); } catch (e) {} zxingReader = null; }
-  if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
-  detector = null;
   $('#cameraBtn').textContent = '📷';
   const s = $('#camStart'); if (s) s.classList.remove('hidden');
 }

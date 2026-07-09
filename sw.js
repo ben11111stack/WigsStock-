@@ -1,5 +1,5 @@
-/* WigsStock service worker – offline app shell cache */
-const CACHE = 'wigsstock-v1';
+/* WigsStock service worker – offline shell, network-first so updates land */
+const CACHE = 'wigsstock-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -26,18 +26,20 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
-  // Network-first for navigations so updates land; cache fallback offline.
-  if (req.mode === 'navigate') {
-    e.respondWith(fetch(req).then((r) => {
-      const copy = r.clone();
-      caches.open(CACHE).then((c) => c.put('./index.html', copy));
-      return r;
-    }).catch(() => caches.match('./index.html')));
+  const sameOrigin = new URL(req.url).origin === self.location.origin;
+
+  // Same-origin app files: network-first so a new deploy is always picked up;
+  // fall back to cache only when offline.
+  if (sameOrigin) {
+    e.respondWith(
+      fetch(req).then((r) => {
+        if (r && r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
+        return r;
+      }).catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html')))
+    );
     return;
   }
-  // Cache-first for static assets.
-  e.respondWith(caches.match(req).then((hit) => hit || fetch(req).then((r) => {
-    if (r.ok && r.type === 'basic') { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
-    return r;
-  })));
+
+  // Cross-origin (e.g. fonts): cache-first.
+  e.respondWith(caches.match(req).then((hit) => hit || fetch(req)));
 });
