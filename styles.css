@@ -141,19 +141,56 @@ details summary { cursor: pointer; }
 }
 
 /* ---------- Scan view ---------- */
+.scanner { padding: 10px 14px 4px; }
+.center { text-align: center; }
+
+/* low, wide camera window suited to a horizontal barcode (not a QR square) */
+#reader {
+  position: relative; width: 100%; height: 190px;
+  border-radius: var(--r-lg); overflow: hidden; background: #0c0c0c;
+}
+#video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.scan-frame {
+  position: absolute; inset: 28% 10%;
+  border: 2px solid rgba(255,255,255,.92); border-radius: 10px;
+  box-shadow: 0 0 0 100vmax rgba(0,0,0,.28);
+}
+.scan-frame::after {
+  content: ""; position: absolute; inset-inline: 6px; top: 50%;
+  height: 2px; background: color-mix(in oklab, var(--primary) 70%, #fff);
+  box-shadow: 0 0 8px 1px color-mix(in oklab, var(--primary) 60%, transparent);
+}
+#reader.hidden { display: none; }
+
+.scan-tools {
+  display: flex; align-items: center; gap: 10px; margin-top: 10px;
+}
+.scan-mini { font-size: 13px; color: var(--ink-2); }
+.scan-mini b { font-size: 16px; font-weight: 620; color: var(--ink); }
+.scan-tools-btns { margin-inline-start: auto; display: flex; gap: 8px; }
+.icon-btn {
+  width: 40px; height: 40px; border-radius: 11px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 18px; cursor: pointer;
+  background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line);
+}
+.icon-btn:active { transform: scale(.96); }
+.icon-btn.danger { color: var(--bad); border-color: color-mix(in oklab, var(--bad) 30%, var(--line)); }
+
+#manualWrap { margin-top: 12px; }
 .scan-input {
-  width: 100%; padding: 15px; text-align: center;
-  font-family: ui-monospace, monospace; font-size: 24px; font-weight: 600; letter-spacing: 3px;
+  width: 100%; padding: 13px; text-align: center;
+  font-family: ui-monospace, monospace; font-size: 22px; font-weight: 600; letter-spacing: 3px;
   color: var(--ink);
   background: var(--surface-2); border: 1.5px solid var(--primary); border-radius: var(--r-lg);
 }
 .scan-banner {
-  margin: 12px 0; padding: 16px; min-height: 84px;
+  margin: 10px 0 0; padding: 12px 14px; min-height: 58px;
   display: flex; flex-direction: column; justify-content: center; text-align: center;
-  border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--surface);
 }
-.scan-banner .code { font-size: 26px; font-weight: 600; letter-spacing: 2px; color: var(--ink); }
-.scan-banner .msg { font-size: 14.5px; font-weight: 600; margin-top: 4px; }
+.scan-banner .code { font-size: 22px; font-weight: 600; letter-spacing: 2px; color: var(--ink); }
+.scan-banner .msg { font-size: 14px; font-weight: 600; margin-top: 2px; }
 .scan-banner.ok      { background: color-mix(in oklab, var(--ok) 9%, var(--bg));      border-color: color-mix(in oklab, var(--ok) 40%, var(--line)); }
 .scan-banner.warn    { background: color-mix(in oklab, var(--warn) 11%, var(--bg));   border-color: color-mix(in oklab, var(--warn) 45%, var(--line)); }
 .scan-banner.bad     { background: color-mix(in oklab, var(--bad) 9%, var(--bg));     border-color: color-mix(in oklab, var(--bad) 40%, var(--line)); }
@@ -164,9 +201,6 @@ details summary { cursor: pointer; }
 .scan-banner.bad .msg { color: var(--bad); }
 .scan-banner.unknown .msg { color: var(--unknown); }
 .scan-banner.dup .msg { color: var(--dup); }
-
-#reader { margin-top: 10px; border-radius: var(--r); overflow: hidden; background: #000; }
-#video { width: 100%; display: block; }
 
 /* ---------- Stats grid ---------- */
 .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }

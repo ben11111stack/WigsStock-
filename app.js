@@ -222,8 +222,6 @@ function setupScanInput() {
     if (e.key === 'Enter') { e.preventDefault(); commit(); }
   });
   $('#manualAdd').addEventListener('click', commit);
-  // keep the field focused for keyboard-wedge scanners
-  $('#tab-scan').addEventListener('click', () => setTimeout(() => input.focus(), 50));
 }
 
 /* ---------- Camera scanning ----------
@@ -253,8 +251,7 @@ async function startCamera() {
   $('#cameraNote').textContent = '';
   const video = $('#video');
   $('#reader').classList.remove('hidden');
-  btn.textContent = '⏹ עצור מצלמה';
-  btn.classList.add('secondary');
+  btn.textContent = '⏹';
   cameraOn = true;
 
   try {
@@ -278,8 +275,7 @@ async function startCamera() {
   } catch (e) {
     cameraOn = false;
     $('#reader').classList.add('hidden');
-    btn.textContent = '📷 סרוק עם המצלמה';
-    btn.classList.remove('secondary');
+    btn.textContent = '📷';
     $('#cameraNote').textContent = 'לא ניתן לגשת למצלמה: ' + (e.message || e);
   }
 }
@@ -306,9 +302,7 @@ function stopCamera() {
   if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
   detector = null;
   $('#reader').classList.add('hidden');
-  const btn = $('#cameraBtn');
-  btn.textContent = '📷 סרוק עם המצלמה';
-  btn.classList.remove('secondary');
+  $('#cameraBtn').textContent = '📷';
 }
 
 /* =====================================================================
@@ -326,10 +320,11 @@ function tableFor(list, cols) {
 
 function renderScanStats() {
   const r = reconcile();
-  $('#scanCount').textContent = r.totalScanned;
-  $('#scanOk').textContent = r.ok.length;
-  $('#scanWarn').textContent = r.foundOther.length;
-  $('#scanUnknown').textContent = r.unknown.length;
+  const set = (sel, v) => { const el = $(sel); if (el) el.textContent = v; };
+  set('#scanCount', r.totalScanned);
+  set('#scanOk', r.ok.length);
+  set('#scanWarn', r.foundOther.length);
+  set('#scanUnknown', r.unknown.length);
 }
 
 function renderReport() {
@@ -471,11 +466,23 @@ function mergeScans(text) {
 /* =====================================================================
  * Tabs + wiring
  * ===================================================================== */
+function ensureCamera() { if (!cameraOn) startCamera(); }
+
+// push a history entry so the hardware/browser back button returns to the
+// previous tab instead of closing the installed app
+function navigate(name) {
+  if (document.querySelector('#panel-' + name + '.active')) return;
+  history.pushState({ tab: name }, '');
+  showTab(name);
+}
+
 function showTab(name) {
+  const wasScan = !!document.querySelector('#panel-scan.active');
   $$('.tab').forEach(t => t.classList.toggle('active', t.id === 'panel-' + name));
   $$('nav button').forEach(b => b.classList.toggle('active', b.id === 'tab-' + name));
+  if (wasScan && name !== 'scan') stopCamera();       // free the camera when leaving
   if (name === 'report') renderReport();
-  if (name === 'scan') setTimeout(() => $('#scanInput').focus(), 60);
+  if (name === 'scan') setTimeout(ensureCamera, 150); // open straight into the scanner
 }
 
 function init() {
@@ -486,8 +493,14 @@ function init() {
   sess.value = state.session || '';
   sess.addEventListener('input', () => { state.session = sess.value; save(); });
 
-  // tabs
-  $$('nav button').forEach(b => b.addEventListener('click', () => showTab(b.id.replace('tab-', ''))));
+  // tabs (each switch pushes history so the back button walks tabs, not out of the app)
+  $$('nav button').forEach(b => b.addEventListener('click', () => navigate(b.id.replace('tab-', ''))));
+  window.addEventListener('popstate', (e) => {
+    const st = e.state || { tab: 'scan' };
+    const w = $('#manualWrap');
+    if (w && !w.classList.contains('hidden') && !st.manual) w.classList.add('hidden');
+    showTab(st.tab || 'scan');
+  });
 
   // inventory load
   $('#invFile').addEventListener('change', (e) => {
@@ -508,6 +521,16 @@ function init() {
   // scanning
   setupScanInput();
   $('#cameraBtn').addEventListener('click', startCamera);
+  $('#manualToggle').addEventListener('click', () => {
+    const w = $('#manualWrap');
+    if (w.classList.contains('hidden')) {
+      w.classList.remove('hidden');
+      history.pushState({ tab: 'scan', manual: true }, '');   // back closes the keypad
+      setTimeout(() => $('#scanInput').focus(), 30);
+    } else {
+      w.classList.add('hidden');
+    }
+  });
 
   // reset scans
   $('#resetScans').addEventListener('click', () => {
@@ -533,7 +556,11 @@ function init() {
   renderInventoryStatus();
   renderScanStats();
   renderReport();
-  showTab(Object.keys(state.inventory).length ? 'scan' : 'load');
+
+  // scan tab is the default landing view; seed history so back walks tabs
+  const start = 'scan';
+  history.replaceState({ tab: start }, '');
+  showTab(start);
 }
 
 function handleImport(text) {
