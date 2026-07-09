@@ -835,12 +835,20 @@ function init() {
   });
 
   // reset scans
-  $('#resetScans').addEventListener('click', () => {
-    if (confirm('לאפס את כל הסריקות? (המלאי יישאר)')) {
-      state.scans = {}; state.dirty = {}; save(); renderReport(); renderScanStats();
-      $('#scanBanner').className = 'scan-banner';
-      $('#scanBanner').innerHTML = '<div class="msg muted">מוכן לסריקה…</div>';
+  $('#resetScans').addEventListener('click', async () => {
+    if (!confirm('לאפס את כל הסריקות של הספירה הזו?\n(כולל בענן — לכל העמדות. המלאי יישאר)')) return;
+    state.scans = {}; state.dirty = {}; state.cloudScans = {}; save();
+    if (cloudEnabled()) {
+      try {
+        await fetch(cloudBase() + '/api/reset', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ count_id: state.countId })
+        });
+      } catch (e) { alert('אופס מקומי בוצע, אך לא הצלחתי לאפס בענן: ' + e.message); }
     }
+    renderReport(); renderScanStats();
+    $('#scanBanner').className = 'scan-banner';
+    $('#scanBanner').innerHTML = '<div class="msg muted">מוכן לסריקה…</div>';
   });
 
   // export

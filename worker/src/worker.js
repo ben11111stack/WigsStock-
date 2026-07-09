@@ -84,6 +84,15 @@ export default {
         return new Response(csv, { status: 200, headers: { 'Content-Type': 'text/csv; charset=utf-8', ...CORS } });
       }
 
+      // Wipe an entire count (all devices) — used by the app's reset button.
+      if (path === '/api/reset' && req.method === 'POST') {
+        const body = await req.json();
+        const countId = (body.count_id || '').trim();
+        if (!countId) return json({ error: 'count_id required' }, 400);
+        const r = await env.DB.prepare('DELETE FROM scans WHERE count_id = ?1').bind(countId).run();
+        return json({ ok: true, deleted: (r.meta && r.meta.changes) || 0 });
+      }
+
       if (path === '/api/scans' && req.method === 'GET') {
         const countId = (url.searchParams.get('count_id') || '').trim();
         if (!countId) return json({ error: 'count_id required' }, 400);
