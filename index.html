@@ -42,7 +42,21 @@
     <section id="panel-load" class="tab">
       <div class="sec-head" style="padding-inline:18px">טעינת מלאי מגוגל שיטס</div>
       <div class="card">
-        <h2>קובץ CSV</h2>
+        <h2>🔗 קישור לגוגל שיטס (מומלץ)</h2>
+        <p class="muted small">הדביקי קישור לגיליון. בשיטס: שיתוף → "כל מי שיש לו הקישור" → מציג. האפליקציה תטען את המלאי משם ותרענן בכל פתיחה.</p>
+        <div class="spacer"></div>
+        <label class="fld">קישור לגיליון
+          <input id="sheetUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/.../edit">
+        </label>
+        <div class="row">
+          <button class="btn" id="sheetLoad">טען מהשיטס</button>
+        </div>
+        <p class="small" id="sheetNote" style="margin:8px 0 0"></p>
+        <div class="hint">צריך עמודת ברקוד ועמודת סטטוס. הכותרות מזוהות אוטומטית. הגיליון חייב להיות משותף ל"כל מי שיש לו הקישור".</div>
+      </div>
+
+      <div class="card">
+        <h2>📄 או קובץ CSV</h2>
         <p class="muted small">בגוגל שיטס: קובץ ← הורדה ← ערכים מופרדים בפסיקים (CSV). צריך עמודת ברקוד ועמודת סטטוס — הכותרות מזוהות אוטומטית.</p>
         <div class="spacer"></div>
         <label class="file-label" for="invFile">בחרי קובץ CSV · או גררי לכאן</label>

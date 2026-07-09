@@ -23,6 +23,18 @@ const CORS = {
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
 
+// Turn any Google Sheets link into a CSV export URL.
+function normalizeSheetUrl(src) {
+  src = src.trim();
+  if (/output=csv|format=csv/.test(src)) return src;          // already a CSV link
+  const idm = src.match(/\/spreadsheets\/d\/(?:e\/)?([a-zA-Z0-9\-_]+)/);
+  if (!idm) return src;
+  const id = idm[1];
+  const gidm = src.match(/[#&?]gid=([0-9]+)/);
+  const gid = gidm ? gidm[1] : '0';
+  return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
+}
+
 export default {
   async fetch(req, env) {
     if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
@@ -56,6 +68,20 @@ export default {
           if (stmts.length) { await env.DB.batch(stmts); synced += stmts.length; }
         }
         return json({ ok: true, synced });
+      }
+
+      // Proxy a Google Sheet as CSV (server-side avoids browser CORS limits).
+      // The sheet must be shared "anyone with the link can view" (or published).
+      if (path === '/api/sheet' && req.method === 'GET') {
+        const src = (url.searchParams.get('url') || '').trim();
+        if (!src) return json({ error: 'url required' }, 400);
+        const target = normalizeSheetUrl(src);
+        if (!/^https:\/\/docs\.google\.com\//.test(target)) return json({ error: 'only Google Sheets links are allowed' }, 400);
+        const r = await fetch(target, { redirect: 'follow', headers: { 'User-Agent': 'wigsstock-sync' } });
+        if (!r.ok) return json({ error: 'could not read the sheet (' + r.status + ') — is it shared "anyone with the link"?' }, 502);
+        const csv = await r.text();
+        if (/<html/i.test(csv.slice(0, 200))) return json({ error: 'the sheet is not public — set sharing to "anyone with the link can view"' }, 502);
+        return new Response(csv, { status: 200, headers: { 'Content-Type': 'text/csv; charset=utf-8', ...CORS } });
       }
 
       if (path === '/api/scans' && req.method === 'GET') {

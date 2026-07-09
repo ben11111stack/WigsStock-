@@ -32,7 +32,8 @@ const state = {
   countId: '',       // shared inventory-count id across stations
   cloudScans: {},    // barcode -> total  (merged from all devices, pulled from cloud)
   dirty: {},         // barcode -> true   (scanned locally, not yet synced)
-  deviceId: ''       // stable fallback id if no station name is set
+  deviceId: '',      // stable fallback id if no station name is set
+  sheetUrl: ''       // Google Sheets link the inventory is loaded/synced from
 };
 
 const LS_KEY = 'wigsstock_v1';
@@ -802,6 +803,15 @@ function init() {
       handleImport(await r.text());
     } catch (e) { alert('לא הצלחתי לטעון דוגמה: ' + e.message); }
   });
+
+  // load inventory from a shared Google Sheets link (via the Worker proxy)
+  const sheetEl = $('#sheetUrl');
+  if (sheetEl) {
+    sheetEl.value = state.sheetUrl || '';
+    sheetEl.addEventListener('change', () => { state.sheetUrl = sheetEl.value.trim(); save(); });
+    $('#sheetLoad').addEventListener('click', () => { state.sheetUrl = sheetEl.value.trim(); save(); loadFromSheet(true); });
+    if (state.sheetUrl) loadFromSheet(false);   // refresh inventory from the sheet on open
+  }
   $('#clearInv').addEventListener('click', () => {
     if (confirm('למחוק את המלאי שנטען?')) { state.inventory = {}; save(); renderInventoryStatus(); renderReport(); }
   });
@@ -864,6 +874,31 @@ function handleImport(text) {
   let note = `נטענו ${res.added.toLocaleString()} פאות.`;
   if (res.unknownStatus) note += ` (${res.unknownStatus} עם סטטוס לא מזוהה — סווגו כ-other)`;
   $('#importNote').textContent = note;
+}
+
+// Load the inventory from a shared Google Sheet, proxied through the Worker.
+async function loadFromSheet(alertOnError) {
+  const note = $('#sheetNote');
+  const setNote = (color, txt) => { if (note) { note.style.color = color; note.textContent = txt; } };
+  if (!state.sheetUrl) { if (alertOnError) alert('הדביקי קישור לגיליון'); return; }
+  if (!state.cloudUrl) { setNote('var(--bad)', 'צריך כתובת שרת (ענן) כדי לטעון מקישור.'); return; }
+  setNote('var(--ink-3)', 'טוען מהשיטס…');
+  try {
+    const r = await fetch(cloudBase() + '/api/sheet?url=' + encodeURIComponent(state.sheetUrl), { cache: 'no-store' });
+    if (!r.ok) {
+      let msg = 'שגיאה ' + r.status;
+      try { const j = await r.json(); if (j.error) msg = j.error; } catch (e) {}
+      throw new Error(msg);
+    }
+    const text = await r.text();
+    const res = importInventory(text);
+    if (res.error) throw new Error(res.error);
+    renderInventoryStatus(); renderReport(); renderScanStats();
+    setNote('var(--ok)', `✅ נטענו ${res.added.toLocaleString()} פאות מהשיטס`);
+  } catch (e) {
+    setNote('var(--bad)', '❌ ' + e.message);
+    if (alertOnError) alert('לא הצלחתי לטעון מהשיטס: ' + e.message);
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);
