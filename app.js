@@ -256,7 +256,7 @@ function setupScanInput() {
  * the file directly from disk on a phone will NOT get the camera; host it
  * (e.g. GitHub Pages) for camera scanning. Hardware scanners work anywhere.
  */
-let cameraOn = false, zxingReader = null;
+let cameraOn = false, zxingReader = null, cameraStream = null, scanTimer = null, scanCanvas = null, scanCtx = null;
 
 function showCamStart(msg) {
   const s = $('#camStart'); if (s) s.classList.remove('hidden');
@@ -274,7 +274,7 @@ function makeReader() {
   hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,
     [F.CODE_128, F.CODE_39, F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.ITF, F.CODABAR, F.QR_CODE]);
   hints.set(ZXing.DecodeHintType.TRY_HARDER, true);   // critical for real barcodes
-  return new ZXing.BrowserMultiFormatReader(hints, 150);
+  return new ZXing.BrowserMultiFormatReader(hints, 100);
 }
 
 async function startCamera() {
@@ -298,18 +298,17 @@ async function startCamera() {
   cameraOn = true;
   setBannerLive();   // show immediately so it never looks stuck on "opening…"
 
-  const constraints = {
-    video: {
-      facingMode: { ideal: 'environment' },
-      width: { ideal: 1920 }, height: { ideal: 1080 },
-      advanced: [{ focusMode: 'continuous' }]
-    }
-  };
   try {
-    zxingReader = makeReader();
-    await zxingReader.decodeFromConstraints(constraints, video, (result) => {
-      if (result) recordScan(result.getText());
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
     });
+    video.srcObject = cameraStream;
+    video.setAttribute('playsinline', 'true');
+    await video.play();
+    zxingReader = makeReader();
+    scanCanvas = document.createElement('canvas');
+    scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
+    scanTick();   // our own decode loop — guarantees frames are actually decoded
   } catch (e) {
     cameraOn = false;
     btn.textContent = '📷';
@@ -318,13 +317,40 @@ async function startCamera() {
   }
 }
 
+/* Grab the current video frame and try to decode it. TRY_HARDER handles
+ * rotation/imperfect framing. Decoding the full frame (capped width) each
+ * ~90ms is reliable across devices. */
+function scanTick() {
+  if (!cameraOn) return;
+  const video = $('#video');
+  try {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (video.readyState >= 2 && vw && vh) {
+      const scale = Math.min(1, 1280 / vw);
+      const cw = Math.round(vw * scale), ch = Math.round(vh * scale);
+      if (scanCanvas.width !== cw) { scanCanvas.width = cw; scanCanvas.height = ch; }
+      scanCtx.drawImage(video, 0, 0, cw, ch);
+      const src = new ZXing.HTMLCanvasElementLuminanceSource(scanCanvas);
+      const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(src));
+      try {
+        const res = zxingReader.decodeBitmap(bmp);
+        if (res) recordScan(res.getText());
+      } catch (e) { /* NotFoundException — no barcode this frame */ }
+    }
+  } catch (e) { /* frame not ready */ }
+  scanTimer = setTimeout(scanTick, 90);
+}
+
 function isSecureContextForCamera() {
   return window.isSecureContext || ['localhost', '127.0.0.1'].includes(location.hostname);
 }
 
 function stopCamera() {
   cameraOn = false;
+  if (scanTimer) { clearTimeout(scanTimer); scanTimer = null; }
   if (zxingReader) { try { zxingReader.reset(); } catch (e) {} zxingReader = null; }
+  if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+  const v = $('#video'); if (v) { try { v.srcObject = null; } catch (e) {} }
   $('#cameraBtn').textContent = '📷';
   const s = $('#camStart'); if (s) s.classList.remove('hidden');
 }
