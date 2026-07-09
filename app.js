@@ -831,7 +831,7 @@ function init() {
   const writeEl = $('#writeUrl');
   if (writeEl) {
     writeEl.value = state.writeUrl || '';
-    writeEl.addEventListener('change', () => { state.writeUrl = writeEl.value.trim(); save(); });
+    writeEl.addEventListener('change', () => { state.writeUrl = writeEl.value.trim(); save(); registerScriptUrl(); });
     $('#writeBtn').addEventListener('click', () => { state.writeUrl = writeEl.value.trim(); save(); writeToSheet(); });
   }
   $('#clearInv').addEventListener('click', () => {
@@ -942,26 +942,34 @@ async function loadFromSheet(alertOnError) {
   }
 }
 
-// Write scan results (a "נסרק" count column) back into the sheet via Apps Script.
+// Register the Apps Script URL for the count so the cron auto-writes.
+async function registerScriptUrl() {
+  if (!cloudEnabled() || !state.writeUrl) return;
+  try {
+    await fetch(cloudBase() + '/api/config', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count_id: state.countId, script_url: state.writeUrl })
+    });
+  } catch (e) { /* non-fatal */ }
+}
+
+// Write results back to the sheet now. The Worker pulls the authoritative
+// scans (all stations) from the cloud, so it never depends on this device.
 async function writeToSheet() {
   const note = $('#writeNote');
   const setNote = (c, t) => { if (note) { note.style.color = c; note.textContent = t; } };
   if (!state.writeUrl) { setNote('var(--bad)', 'הדביקי קישור Apps Script'); return; }
   if (!state.cloudUrl) { setNote('var(--bad)', 'צריך כתובת שרת (ענן).'); return; }
-  const eff = effectiveScans();
-  const scans = {};
-  for (const k in eff) scans[k] = eff[k].count;
-  const n = Object.keys(scans).length;
-  if (!n && !confirm('אין סריקות כרגע — לכתוב עמודה ריקה?')) return;
   setNote('var(--ink-3)', 'כותב לשיטס…');
   try {
+    await registerScriptUrl();   // also turns on auto-write from now on
     const r = await fetch(cloudBase() + '/api/writeback', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ script_url: state.writeUrl, scans })
+      body: JSON.stringify({ script_url: state.writeUrl, count_id: state.countId })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) throw new Error(j.error || ('שגיאה ' + r.status));
-    setNote('var(--ok)', `✅ נכתב לשיטס — ${j.written} פאות סומנו כנסרקו (עמודה "${j.column}")`);
+    setNote('var(--ok)', `✅ נכתב לשיטס — ${j.written} פאות (עמודות: נסרק / תאריך / עמדה). מכאן זה נכתב אוטומטית.`);
   } catch (e) {
     setNote('var(--bad)', '❌ ' + e.message);
   }

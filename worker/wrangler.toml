@@ -2,6 +2,10 @@ name = "wigsstock-sync"
 main = "src/worker.js"
 compatibility_date = "2024-11-01"
 
+# auto-write results to the sheet every 2 minutes
+[triggers]
+crons = ["*/2 * * * *"]
+
 # Fill database_id after: npx wrangler d1 create wigsstock
 [[d1_databases]]
 binding = "DB"

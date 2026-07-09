@@ -35,6 +35,32 @@ function normalizeSheetUrl(src) {
   return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
 }
 
+// Aggregate a count's scans per barcode: total, last time, and stations.
+async function aggregateScans(env, countId) {
+  const { results } = await env.DB.prepare(
+    `SELECT barcode, SUM(count) AS total, MAX(updated_at) AS last, GROUP_CONCAT(DISTINCT device) AS devices
+     FROM scans WHERE count_id = ?1 GROUP BY barcode`
+  ).bind(countId).all();
+  const scans = {};
+  for (const r of results) {
+    if (r.total > 0) scans[r.barcode] = { count: r.total, last: r.last || 0, station: r.devices || '' };
+  }
+  return scans;
+}
+
+// Push a count's results to the owner's Apps Script web app.
+async function doWriteback(env, countId, scriptUrl) {
+  const scans = await aggregateScans(env, countId);
+  const r = await fetch(scriptUrl, {
+    method: 'POST', redirect: 'follow',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scans })
+  });
+  const text = await r.text();
+  try { return JSON.parse(text); }
+  catch (e) { return { ok: false, error: 'unexpected response from Apps Script (deployed as web app, access = Anyone?)', raw: text.slice(0, 200) }; }
+}
+
 export default {
   async fetch(req, env) {
     if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
@@ -88,20 +114,16 @@ export default {
       // web app (server-side POST avoids browser CORS with Apps Script).
       if (path === '/api/writeback' && req.method === 'POST') {
         const body = await req.json();
-        const scriptUrl = (body.script_url || '').trim();
-        const scans = body.scans || {};
-        if (!scriptUrl) return json({ error: 'script_url required' }, 400);
+        const countId = (body.count_id || '').trim();
+        if (!countId) return json({ error: 'count_id required' }, 400);
+        let scriptUrl = (body.script_url || '').trim();
+        if (!scriptUrl) {
+          const m = await env.DB.prepare(`SELECT script_url FROM meta WHERE count_id = ?1`).bind(countId).first();
+          scriptUrl = m && m.script_url ? m.script_url : '';
+        }
         if (!/^https:\/\/script\.google\.com\//.test(scriptUrl)) return json({ error: 'only Apps Script (script.google.com) URLs are allowed' }, 400);
-        const r = await fetch(scriptUrl, {
-          method: 'POST', redirect: 'follow',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scans, column: body.column })
-        });
-        const text = await r.text();
-        let data;
-        try { data = JSON.parse(text); }
-        catch (e) { return json({ error: 'unexpected response from Apps Script (is it deployed as a web app, access = Anyone?)', raw: text.slice(0, 200) }, 502); }
-        return json(data, data && data.ok ? 200 : 502);
+        const result = await doWriteback(env, countId, scriptUrl);
+        return json(result, result && result.ok ? 200 : 502);
       }
 
       // Wipe an entire count (all devices) — used by the app's reset button.
@@ -125,10 +147,13 @@ export default {
         const body = await req.json();
         const countId = (body.count_id || '').trim();
         if (!countId) return json({ error: 'count_id required' }, 400);
-        await env.DB.prepare(
-          `INSERT INTO meta (count_id, sheet_url, updated_at) VALUES (?1, ?2, ?3)
-           ON CONFLICT(count_id) DO UPDATE SET sheet_url = excluded.sheet_url, updated_at = excluded.updated_at`
-        ).bind(countId, (body.sheet_url || '').trim(), Date.now()).run();
+        const now = Date.now();
+        await env.DB.prepare(`INSERT INTO meta (count_id, updated_at) VALUES (?1, ?2) ON CONFLICT(count_id) DO NOTHING`).bind(countId, now).run();
+        // update only the fields that were provided (don't clobber the other)
+        if (body.sheet_url !== undefined)
+          await env.DB.prepare(`UPDATE meta SET sheet_url = ?2, updated_at = ?3 WHERE count_id = ?1`).bind(countId, String(body.sheet_url || '').trim(), now).run();
+        if (body.script_url !== undefined)
+          await env.DB.prepare(`UPDATE meta SET script_url = ?2, updated_at = ?3 WHERE count_id = ?1`).bind(countId, String(body.script_url || '').trim(), now).run();
         return json({ ok: true });
       }
 
@@ -158,5 +183,24 @@ export default {
     } catch (e) {
       return json({ error: String((e && e.message) || e) }, 500);
     }
+  },
+
+  // Cron: auto-write results to the sheet for any count that has a script_url
+  // and new scans since the last write.
+  async scheduled(event, env, ctx) {
+    try {
+      const { results } = await env.DB
+        .prepare(`SELECT count_id, script_url, last_written FROM meta WHERE script_url IS NOT NULL AND script_url != ''`)
+        .all();
+      for (const m of results) {
+        const mx = await env.DB.prepare(`SELECT MAX(updated_at) AS mx FROM scans WHERE count_id = ?1`).bind(m.count_id).first();
+        if (!mx || !mx.mx) continue;
+        if (m.last_written && mx.mx <= m.last_written) continue;   // nothing new since last write
+        const res = await doWriteback(env, m.count_id, m.script_url);
+        if (res && res.ok) {
+          await env.DB.prepare(`UPDATE meta SET last_written = ?2 WHERE count_id = ?1`).bind(m.count_id, Date.now()).run();
+        }
+      }
+    } catch (e) { /* swallow — next tick retries */ }
   },
 };
