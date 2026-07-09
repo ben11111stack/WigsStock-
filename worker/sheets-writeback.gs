@@ -1,18 +1,25 @@
 /**
  * WigsStock – write scan results back into the inventory sheet.
  *
- * SETUP (done once by someone with EDIT access to the sheet):
- *   1. Open the Google Sheet → Extensions → Apps Script.
+ * This is a STANDALONE script (the target sheet is set by SHEET_ID below),
+ * so it can be deployed from ANY Google account that has EDIT access to
+ * the sheet — it does not need to be bound to the sheet.
+ *
+ * SETUP (done once, from an account with EDIT access):
+ *   1. https://script.google.com  → New project.
  *   2. Paste this whole file, Save.
  *   3. Deploy → New deployment → type "Web app":
  *        - Execute as: Me
  *        - Who has access: Anyone
- *      Deploy, authorize, and COPY the Web app URL.
+ *      Deploy, authorize, and COPY the Web app URL (ends with /exec).
  *   4. In the WigsStock app → מלאי → "כתיבה לשיטס", paste that URL.
  *
  * It ONLY adds/updates a single "נסרק" column (scan count per barcode).
  * It never changes your original barcode/status columns.
  */
+
+// The sheet to write to (taken from your sheet link).
+var SHEET_ID = '17Sem_IwgporhMsXEhVvW7ysIamzc_Ktxv-7molhp35k';
 
 var RESULT_COLUMN = 'נסרק';   // the one column we add/update
 
@@ -22,7 +29,7 @@ function doPost(e) {
     var scans = body.scans || {};                 // { barcode: count }
     var colName = body.column || RESULT_COLUMN;
 
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+    var sheet = SpreadsheetApp.openById(SHEET_ID).getSheets()[0];
     var range = sheet.getDataRange();
     var values = range.getValues();
     if (!values.length) return json({ ok: false, error: 'empty sheet' });
