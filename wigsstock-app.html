@@ -462,8 +462,10 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
 'use strict';
 
 /* ---------- Status model ---------- */
-// The one status that means "should physically be in the store".
+// Statuses that mean "should physically be in the store" (treated as in-stock).
 const IN_STOCK = 'in-stock';
+const IN_STORE_STATUSES = ['in-stock', 'consignment'];
+function isInStore(status) { return IN_STORE_STATUSES.includes(status); }
 const KNOWN_STATUSES = [
   'barter', 'consignment', 'fix-return', 'in-stock', 'inventory-reserved',
   'missing', 'other', 'personal-use', 'returned', 'sold', 'wish-list'
@@ -605,12 +607,12 @@ function reconcile() {
     const s = scans[bc];
     if (s.count > 1) duplicates.push({ barcode: bc, count: s.count });
     if (!(bc in inv)) { unknown.push({ barcode: bc, count: s.count }); continue; }
-    if (inv[bc] === IN_STOCK) ok.push({ barcode: bc, status: inv[bc] });
+    if (isInStore(inv[bc])) ok.push({ barcode: bc, status: inv[bc] });
     else foundOther.push({ barcode: bc, status: inv[bc] });
   }
 
   for (const bc of invKeys) {
-    if (inv[bc] === IN_STOCK && !(bc in scans)) missing.push({ barcode: bc, status: inv[bc] });
+    if (isInStore(inv[bc]) && !(bc in scans)) missing.push({ barcode: bc, status: inv[bc] });
   }
 
   const sortBc = (a, b) => a.barcode.localeCompare(b.barcode, undefined, { numeric: true });
@@ -620,7 +622,7 @@ function reconcile() {
     ok, missing, foundOther, unknown, duplicates,
     totalScanned: scanKeys.length,
     totalInventory: invKeys.length,
-    expectedInStock: invKeys.filter(bc => inv[bc] === IN_STOCK).length
+    expectedInStock: invKeys.filter(bc => isInStore(inv[bc])).length
   };
 }
 
@@ -650,21 +652,18 @@ function recordScan(rawCode) {
   renderScanStats();
 }
 
-function classify(code) {
-  const inv = state.inventory;
-  if (!(code in inv)) return { kind: 'unknown', msg: '❓ ברקוד לא קיים בקובץ המלאי' };
-  if (inv[code] === IN_STOCK) return { kind: 'ok', msg: '✅ תקין — במלאי' };
-  return { kind: 'warn', msg: `⚠️ מסומן כ"${inv[code]}" — צריך לתקן ל-in-stock` };
-}
-
+// Worker-facing feedback is deliberately status-agnostic: a scanned wig just
+// shows "scanned successfully". The sheet status (sold/consignment/…) is only
+// surfaced to the manager in the report, not to the scanning worker.
 function showScanFeedback(code, wasDuplicate) {
   const banner = $('#scanBanner');
-  const c = classify(code);
-  const kind = wasDuplicate ? 'dup' : c.kind;
+  const known = code in state.inventory;
+  let kind, msg;
+  if (!known) { kind = 'unknown'; msg = '❓ ברקוד לא מוכר — לא בקובץ'; }
+  else if (wasDuplicate) { kind = 'dup'; msg = '🔁 כבר נסרק'; }
+  else { kind = 'ok'; msg = '✅ נסרק בהצלחה'; }
   banner.className = 'scan-banner ' + kind;
-  banner.innerHTML =
-    `<div class="code">${esc(code)}</div>` +
-    `<div class="msg">${wasDuplicate ? '🔁 כבר נסרק — ' : ''}${c.msg}</div>`;
+  banner.innerHTML = `<div class="code">${esc(code)}</div><div class="msg">${msg}</div>`;
   beep(kind);
   if (navigator.vibrate) navigator.vibrate(kind === 'ok' ? 40 : [40, 60, 40]);
 }
@@ -839,7 +838,7 @@ function renderReport() {
 
   const bcCol = { label: 'ברקוד', render: i => `<b>${esc(i.barcode)}</b>` };
   const statusCol = { label: 'סטטוס בשיטס', render: i =>
-    `<span class="tag ${i.status === IN_STOCK ? 'instock' : 'other'}">${esc(i.status)}</span>` };
+    `<span class="tag ${isInStore(i.status) ? 'instock' : 'other'}">${esc(i.status)}</span>` };
   const countCol = { label: 'פעמים', render: i => i.count };
 
   el.innerHTML = `
@@ -893,7 +892,7 @@ function renderInventoryStatus() {
   const counts = {};
   for (const s of Object.values(state.inventory)) counts[s] = (counts[s] || 0) + 1;
   const rows = Object.entries(counts).sort((a, b) => b[1] - a[1])
-    .map(([s, c]) => `<tr><td><span class="tag ${s === IN_STOCK ? 'instock' : 'other'}">${esc(s)}</span></td><td>${c.toLocaleString()}</td></tr>`).join('');
+    .map(([s, c]) => `<tr><td><span class="tag ${isInStore(s) ? 'instock' : 'other'}">${esc(s)}</span></td><td>${c.toLocaleString()}</td></tr>`).join('');
   el.innerHTML = `
     <p>✅ נטענו <b>${n.toLocaleString()}</b> פאות.</p>
     <div class="scroll"><table><thead><tr><th>סטטוס</th><th>כמות</th></tr></thead><tbody>${rows}</tbody></table></div>`;
