@@ -113,6 +113,19 @@ export default {
         return json({ ok: true, deleted: (r.meta && r.meta.changes) || 0 });
       }
 
+      // Register the shared inventory source (Google Sheet link) for a count,
+      // so every station auto-loads the same inventory.
+      if (path === '/api/config' && req.method === 'POST') {
+        const body = await req.json();
+        const countId = (body.count_id || '').trim();
+        if (!countId) return json({ error: 'count_id required' }, 400);
+        await env.DB.prepare(
+          `INSERT INTO meta (count_id, sheet_url, updated_at) VALUES (?1, ?2, ?3)
+           ON CONFLICT(count_id) DO UPDATE SET sheet_url = excluded.sheet_url, updated_at = excluded.updated_at`
+        ).bind(countId, (body.sheet_url || '').trim(), Date.now()).run();
+        return json({ ok: true });
+      }
+
       if (path === '/api/scans' && req.method === 'GET') {
         const countId = (url.searchParams.get('count_id') || '').trim();
         if (!countId) return json({ error: 'count_id required' }, 400);
@@ -126,7 +139,13 @@ export default {
           .prepare(`SELECT COUNT(DISTINCT device) AS n FROM scans WHERE count_id = ?1`)
           .bind(countId).first();
 
-        return json({ ok: true, scans, barcodes: Object.keys(scans).length, devices: dev ? dev.n : 0 });
+        let sheetUrl = '';
+        try {
+          const m = await env.DB.prepare(`SELECT sheet_url FROM meta WHERE count_id = ?1`).bind(countId).first();
+          if (m && m.sheet_url) sheetUrl = m.sheet_url;
+        } catch (e) { /* meta table may not exist yet */ }
+
+        return json({ ok: true, scans, barcodes: Object.keys(scans).length, devices: dev ? dev.n : 0, sheet_url: sheetUrl });
       }
 
       return json({ error: 'not found', path }, 404);

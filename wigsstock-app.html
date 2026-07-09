@@ -1107,6 +1107,13 @@ async function pullCloud() {
     save();
     renderReport(); renderScanStats();
     setCloudStatus('ok', data);
+    // adopt the shared inventory source set by the manager (loads it on every station)
+    if (data.sheet_url && data.sheet_url !== state.sheetUrl) {
+      state.sheetUrl = data.sheet_url;
+      const el = $('#sheetUrl'); if (el) el.value = state.sheetUrl;
+      save();
+      loadFromSheet(false);
+    }
   } catch (e) { /* keep last known cloud data */ }
 }
 
@@ -1408,6 +1415,15 @@ async function loadFromSheet(alertOnError) {
     if (res.error) throw new Error(res.error);
     renderInventoryStatus(); renderReport(); renderScanStats();
     setNote('var(--ok)', `✅ נטענו ${res.added.toLocaleString()} פאות מהשיטס`);
+    // share this inventory source with the whole count so other stations auto-load it
+    if (alertOnError && cloudEnabled()) {
+      try {
+        await fetch(cloudBase() + '/api/config', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ count_id: state.countId, sheet_url: state.sheetUrl })
+        });
+      } catch (e) { /* non-fatal */ }
+    }
   } catch (e) {
     setNote('var(--bad)', '❌ ' + e.message);
     if (alertOnError) alert('לא הצלחתי לטעון מהשיטס: ' + e.message);
