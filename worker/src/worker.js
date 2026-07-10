@@ -48,6 +48,19 @@ async function aggregateScans(env, countId) {
   return scans;
 }
 
+// Fast, throttled write-back triggered right after new scans arrive, so the
+// sheet updates within a few seconds instead of waiting for the cron.
+async function maybeWriteback(env, countId) {
+  try {
+    const m = await env.DB.prepare(`SELECT script_url, last_written FROM meta WHERE count_id = ?1`).bind(countId).first();
+    if (!m || !m.script_url) return;
+    const now = Date.now();
+    if (m.last_written && now - m.last_written < 5000) return;   // at most one write / 5s
+    await env.DB.prepare(`UPDATE meta SET last_written = ?2 WHERE count_id = ?1`).bind(countId, now).run();
+    await doWriteback(env, countId, m.script_url);
+  } catch (e) { /* cron will catch up */ }
+}
+
 // Push a count's results to the owner's Apps Script web app.
 async function doWriteback(env, countId, scriptUrl) {
   const scans = await aggregateScans(env, countId);
@@ -62,7 +75,7 @@ async function doWriteback(env, countId, scriptUrl) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/, '') || '/';
@@ -93,6 +106,8 @@ export default {
           );
           if (stmts.length) { await env.DB.batch(stmts); synced += stmts.length; }
         }
+        // fast sheet update: fire a throttled write-back without blocking the response
+        if (synced > 0 && ctx && ctx.waitUntil) ctx.waitUntil(maybeWriteback(env, countId));
         return json({ ok: true, synced });
       }
 
@@ -157,14 +172,34 @@ export default {
         return json({ ok: true });
       }
 
+      // Delete all scans of one barcode in a count (correction) — every station drops it on pull.
+      if (path === '/api/delete-scan' && req.method === 'POST') {
+        const body = await req.json();
+        const countId = (body.count_id || '').trim();
+        const barcode = String(body.barcode || '').trim();
+        if (!countId || !barcode) return json({ error: 'count_id and barcode required' }, 400);
+        const r = await env.DB.prepare('DELETE FROM scans WHERE count_id = ?1 AND barcode = ?2').bind(countId, barcode).run();
+        // bump reset_at so stations reconcile (drop it locally) on next pull
+        const now = Date.now();
+        await env.DB.prepare(
+          `INSERT INTO meta (count_id, reset_at, updated_at) VALUES (?1, ?2, ?3)
+           ON CONFLICT(count_id) DO UPDATE SET reset_at = excluded.reset_at, updated_at = excluded.updated_at`
+        ).bind(countId, now, now).run();
+        return json({ ok: true, deleted: (r.meta && r.meta.changes) || 0, reset_at: now });
+      }
+
       if (path === '/api/scans' && req.method === 'GET') {
         const countId = (url.searchParams.get('count_id') || '').trim();
         if (!countId) return json({ error: 'count_id required' }, 400);
         const { results } = await env.DB
-          .prepare(`SELECT barcode, SUM(count) AS total FROM scans WHERE count_id = ?1 GROUP BY barcode`)
+          .prepare(`SELECT barcode, SUM(count) AS total, MAX(updated_at) AS last, GROUP_CONCAT(DISTINCT device) AS devices
+                    FROM scans WHERE count_id = ?1 GROUP BY barcode`)
           .bind(countId).all();
-        const scans = {};
-        for (const r of results) if (r.total > 0) scans[r.barcode] = r.total;
+        const scans = {}, detail = {};
+        for (const r of results) if (r.total > 0) {
+          scans[r.barcode] = r.total;
+          detail[r.barcode] = { count: r.total, last: r.last || 0, station: r.devices || '' };
+        }
 
         const dev = await env.DB
           .prepare(`SELECT COUNT(DISTINCT device) AS n FROM scans WHERE count_id = ?1`)
@@ -176,7 +211,7 @@ export default {
           if (m) { sheetUrl = m.sheet_url || ''; resetAt = m.reset_at || 0; }
         } catch (e) { /* meta table may not exist yet */ }
 
-        return json({ ok: true, scans, barcodes: Object.keys(scans).length, devices: dev ? dev.n : 0, sheet_url: sheetUrl, reset_at: resetAt });
+        return json({ ok: true, scans, detail, barcodes: Object.keys(scans).length, devices: dev ? dev.n : 0, sheet_url: sheetUrl, reset_at: resetAt });
       }
 
       return json({ error: 'not found', path }, 404);
