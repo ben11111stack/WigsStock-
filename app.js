@@ -54,8 +54,11 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.11.2';
+const APP_VERSION = '1.12.0';
 const CHANGELOG = [
+  { v: '1.12.0', notes: [
+    'בחירת טאב פתיחה בהגדרות — איזה מסך ייפתח כשמפעילים את האפליקציה'
+  ] },
   { v: '1.11.2', notes: [
     'שורת הכותרת בטבלאות הדוח נעוצה עם רקע אטום — שורות לא "מבצבצות" מבעדה',
     'הדוחות מציגים את כל השורות (לא רק 500 הראשונות)'
@@ -149,8 +152,19 @@ const state = {
   invNames: {},      // barcode -> wig name read from the sheet's name column (if any)
   statusOverrides: {}, // barcode -> status changed from the wig card (survives sheet reload)
   statusVocab: null, // user-edited status vocabulary ([{key,label,inStore}]); null = defaults
-  logoAnim: true     // constant motion of the small header logo (splash always plays regardless)
+  logoAnim: true,    // constant motion of the small header logo (splash always plays regardless)
+  defaultTab: 'scan' // which tab opens on app launch
 };
+
+// The five tabs, in nav order — used for the "default tab" picker in Settings.
+const TABS = [
+  { id: 'scan',     label: 'סריקה' },
+  { id: 'report',   label: 'דוח' },
+  { id: 'load',     label: 'מלאי' },
+  { id: 'export',   label: 'ייצוא' },
+  { id: 'settings', label: 'הגדרות' }
+];
+function defaultTab() { return TABS.some(t => t.id === state.defaultTab) ? state.defaultTab : 'scan'; }
 
 /* ---------- Per-wig helpers ----------
  * Effective status = a card override if one was set, else the sheet's value.
@@ -2025,8 +2039,8 @@ function init() {
   renderPending();
   renderSessionLog();
 
-  // scan tab is the default landing view; seed history so back walks tabs
-  const start = 'scan';
+  // landing view — the tab chosen in Settings (default: scan); seed history so back walks tabs
+  const start = defaultTab();
   history.replaceState({ tab: start }, '');
   showTab(start);
 }
@@ -2077,6 +2091,17 @@ function setupTheme() {
     logoEl.checked = state.logoAnim !== false;
     logoEl.addEventListener('change', () => { state.logoAnim = logoEl.checked; save(); applyLogoAnim(); });
   }
+  renderDefaultTab();
+}
+function renderDefaultTab() {
+  const wrap = $('#defaultTabPicker');
+  if (!wrap) return;
+  const cur = defaultTab();
+  wrap.innerHTML = TABS.map(t =>
+    `<button class="seg-opt${t.id === cur ? ' active' : ''}" data-tab="${t.id}">${esc(t.label)}</button>`).join('');
+  wrap.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
+    state.defaultTab = b.getAttribute('data-tab'); save(); renderDefaultTab();
+  }));
 }
 
 /* ---------- Status manager (Settings) ----------

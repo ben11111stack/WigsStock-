@@ -473,6 +473,11 @@ td .ic { width: 15px; height: 15px; }
   background: var(--surface-2); color: var(--ink-2); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .sound-opt:active { transform: scale(.96); }
 .sound-opt.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.seg-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.seg-opt { padding: 8px 15px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink-2); font-size: 13px; font-weight: 600; cursor: pointer; }
+.seg-opt:active { transform: scale(.96); }
+.seg-opt.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
 /* ---------- Tappable barcode + wig product card ---------- */
 .bc-link { cursor: pointer; border-bottom: 1px dashed color-mix(in oklab, var(--primary) 45%, var(--line)); }
