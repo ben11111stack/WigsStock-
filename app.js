@@ -54,8 +54,11 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.11.1';
 const CHANGELOG = [
+  { v: '1.11.1', notes: [
+    'תיקון: כפתור הסגירה בכרטיס הפאה כיסה את שם הפאה'
+  ] },
   { v: '1.11.0', notes: [
     'פתיח לוגו מונפש בכל פתיחת אפליקציה',
     'הלוגו הקטן למעלה מונפש כל הזמן — לחיצה עליו פותחת את הפתיח המלא',

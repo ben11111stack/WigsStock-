@@ -520,7 +520,9 @@ td .ic { width: 15px; height: 15px; }
 .pc-soon .ic { width: 16px; height: 16px; flex: none; }
 
 /* card header: editable name next to the barcode, same size */
-.pc-idrow { display: flex; align-items: center; gap: 10px; padding: 2px 0 16px; }
+/* reserve room for the absolute close button (top inline-start corner) so it
+ * never sits over the editable wig name */
+.pc-idrow { display: flex; align-items: center; gap: 10px; padding: 2px 0 16px; padding-inline-start: 46px; }
 .pc-name { flex: 1 1 auto; min-width: 0; font-size: 22px; font-weight: 700; letter-spacing: -.01em;
   color: var(--ink); background: transparent; border: none; border-bottom: 1px dashed var(--line);
   padding: 3px 2px; border-radius: 0; }
@@ -1102,8 +1104,11 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.11.1';
 const CHANGELOG = [
+  { v: '1.11.1', notes: [
+    'תיקון: כפתור הסגירה בכרטיס הפאה כיסה את שם הפאה'
+  ] },
   { v: '1.11.0', notes: [
     'פתיח לוגו מונפש בכל פתיחת אפליקציה',
     'הלוגו הקטן למעלה מונפש כל הזמן — לחיצה עליו פותחת את הפתיח המלא',
