@@ -23,10 +23,16 @@ const KNOWN_STATUSES = [
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.6.1';
+const APP_VERSION = '1.7.0';
 const CHANGELOG = [
+  { v: '1.7.0', notes: [
+    'עיצוב מחדש יוקרתי — ערכת אייקוני קו אחידה בכל המסכים במקום אימוג\'ים',
+    'ניווט תחתון בסגנון בנקאי: כפתור הסריקה במרכז, עגול ומוגבה',
+    'תגי סטטוס מעודנים ואחידים, וכרטיסי דוח נקיים יותר',
+    'טאב המלאי נוקה מהסברים מיותרים — פשוט הנתונים'
+  ] },
   { v: '1.6.1', notes: [
-    'כפתור סריקה (📷) בשדה החיפוש שבדוח — סורקים פאה ורואים מיד את הסטטוס שלה (בלי לרשום סריקה)',
+    'כפתור סריקה בשדה החיפוש שבדוח — סורקים פאה ורואים מיד את הסטטוס שלה (בלי לרשום סריקה)',
     'כרטיס סטטוס לפאה בודדת: תקין / חסרה / מסומנת אחרת / לא מוכרת, כולל העמדה שסרקה'
   ] },
   { v: '1.6.0', notes: [
@@ -98,6 +104,47 @@ function normBarcode(s) {
   s = String(s == null ? '' : s).replace(/^﻿/, '').replace(/^'/, '').trim().replace(/\s+/g, '');
   if (/^\d+$/.test(s)) s = s.replace(/^0+(\d)/, '$1');
   return s;
+}
+
+/* ---------- Icon system ----------
+ * One coherent set of Lucide-style line icons (24×24, stroke=currentColor),
+ * matching the bottom-nav / settings icons. Replaces ad-hoc emoji so the whole
+ * UI reads as one premium system. `ic(name)` returns inline SVG; color comes
+ * from the surrounding text color (or a modifier class). */
+const ICONS = {
+  check:    '<circle cx="12" cy="12" r="9"/><path d="m8.3 12 2.6 2.6L15.7 9"/>',
+  x:        '<circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/>',
+  alert:    '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  help:     '<circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 1 1 3.4 2.3c-.8.4-1 .9-1 1.7"/><path d="M12 17h.01"/>',
+  copy:     '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M5 15a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2"/>',
+  bars:     '<line x1="5" y1="20" x2="5" y2="13"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="19" y1="20" x2="19" y2="9"/>',
+  users:    '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  user:     '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  file:     '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+  undo:     '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+  redo:     '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
+  list:     '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3.5" y1="6" x2="3.5" y2="6"/><line x1="3.5" y1="12" x2="3.5" y2="12"/><line x1="3.5" y1="18" x2="3.5" y2="18"/>',
+  zap:      '<path d="M13 2 3 14h9l-1 8 10-12h-9z"/>',
+  camera:   '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+  reset:    '<path d="M3 2v6h6"/><path d="M3.5 9a9 9 0 1 0 2.1-3.4L3 8"/>',
+  cloud:    '<path d="M18 10h-1.3A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>',
+  folder:   '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+  trash:    '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  refresh:  '<path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.8-3.4L23 10"/><path d="M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/>',
+  search:   '<circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/>',
+  edit:     '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  close:    '<path d="M18 6 6 18M6 6l12 12"/>',
+  scan:     '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/>',
+  stop:     '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  cloudOff: '<path d="M18 10h-1.3A8 8 0 0 0 6 6M2 2l20 20M6 10a5 5 0 0 0 0 10h11"/>',
+  upload:   '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 9 5-5 5 5"/><path d="M12 4v12"/>',
+  archive:  '<rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/>',
+  info:     '<circle cx="12" cy="12" r="9"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  chevron:  '<path d="m15 18-6-6 6-6"/>'
+};
+function ic(name, cls) {
+  return `<svg class="ic${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 }
 
 /* =====================================================================
@@ -280,7 +327,7 @@ function unrecordScan(code) {
 function undoScan() {
   const a = undoStack.pop();
   if (!a) return;
-  if (unrecordScan(a.code)) { redoStack.push(a); updateUndoRedo(); flashBanner('↩️ בוטלה סריקה: ' + a.code, 'dup'); }
+  if (unrecordScan(a.code)) { redoStack.push(a); updateUndoRedo(); flashBanner(ic('undo') + ' בוטלה סריקה: ' + esc(a.code), 'dup'); }
   else updateUndoRedo();
 }
 
@@ -305,11 +352,12 @@ function logSession(code, kind) {
   renderSessionLog();
 }
 
+// msg may contain safe inline SVG/markup; callers escape any dynamic text.
 function flashBanner(msg, kind) {
   const banner = $('#scanBanner');
   if (!banner) return;
   banner.className = 'scan-banner ' + (kind || '');
-  banner.innerHTML = `<div class="msg">${esc(msg)}</div>`;
+  banner.innerHTML = `<div class="msg">${msg}</div>`;
 }
 
 // Worker-facing feedback is deliberately status-agnostic: a scanned wig just
@@ -318,12 +366,12 @@ function flashBanner(msg, kind) {
 function showScanFeedback(code, wasDuplicate) {
   const banner = $('#scanBanner');
   const known = code in state.inventory;
-  let kind, msg;
-  if (!known) { kind = 'unknown'; msg = '❓ ברקוד לא מוכר — לא בקובץ'; }
-  else if (wasDuplicate) { kind = 'dup'; msg = '🔁 כבר נסרק'; }
-  else { kind = 'ok'; msg = '✅ נסרק בהצלחה'; }
+  let kind, glyph, msg;
+  if (!known) { kind = 'unknown'; glyph = 'help'; msg = 'ברקוד לא מוכר — לא בקובץ'; }
+  else if (wasDuplicate) { kind = 'dup'; glyph = 'copy'; msg = 'כבר נסרק'; }
+  else { kind = 'ok'; glyph = 'check'; msg = 'נסרק בהצלחה'; }
   banner.className = 'scan-banner ' + kind;
-  banner.innerHTML = `<div class="code">${esc(code)}</div><div class="msg">${msg}</div>`;
+  banner.innerHTML = `<div class="code">${esc(code)}</div><div class="msg">${ic(glyph)} ${msg}</div>`;
   // flash the scan line green on a successful read (red otherwise)
   const frame = document.querySelector('.scan-frame');
   if (frame && (kind === 'ok' || kind === 'dup')) {
@@ -388,7 +436,7 @@ function showCamStart(msg) {
 
 function setBannerLive() {
   const b = $('#scanBanner');
-  if (b) { b.className = 'scan-banner'; b.innerHTML = '<div class="msg muted">📷 מצלמה פעילה — כוונו ברקוד למסגרת</div>'; }
+  if (b) { b.className = 'scan-banner'; b.innerHTML = `<div class="msg muted">${ic('camera')} מצלמה פעילה — כוונו ברקוד למסגרת</div>`; }
 }
 
 function makeReader() {
@@ -417,7 +465,7 @@ async function startCamera() {
   $('#reader').classList.remove('hidden');
   $('#camStart').classList.add('hidden');
   $('#cameraNote').textContent = '';
-  btn.textContent = '⏹';
+  btn.innerHTML = ic('stop');
   cameraOn = true;
   setBannerLive();   // show immediately so it never looks stuck on "opening…"
 
@@ -435,7 +483,7 @@ async function startCamera() {
     armCameraIdle();
   } catch (e) {
     cameraOn = false;
-    btn.textContent = '📷';
+    btn.innerHTML = ic('camera');
     showCamStart(cameraErrorMessage(e));
   }
 }
@@ -464,7 +512,7 @@ async function getCameraStream() {
 // Turn a getUserMedia failure into actionable Hebrew guidance.
 function cameraErrorMessage(e) {
   const s = (e && (e.name + ' ' + (e.message || ''))) || '';
-  if (/NotAllowed|denied|permission/i.test(s)) return 'הקש/י על הכפתור כדי לאשר מצלמה 📷';
+  if (/NotAllowed|denied|permission/i.test(s)) return 'הקש/י על הכפתור כדי לאשר מצלמה';
   if (/NotReadable|Could not start|in use|busy|track ?start/i.test(s))
     return 'המצלמה תפוסה — סגרי אפליקציות/טאבים אחרים שמשתמשים במצלמה (כולל האפליקציה המותקנת), ונסי שוב. בינתיים: סורק חיצוני או הקלדה.';
   if (/NotFound|Overconstrained|Requested device/i.test(s))
@@ -506,7 +554,7 @@ function stopCamera() {
   if (zxingReader) { try { zxingReader.reset(); } catch (e) {} zxingReader = null; }
   if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
   const v = $('#video'); if (v) { try { v.srcObject = null; } catch (e) {} }
-  $('#cameraBtn').textContent = '📷';
+  $('#cameraBtn').innerHTML = ic('camera');
   const s = $('#camStart'); if (s) s.classList.remove('hidden');
   torchOn = false; torchProbed = false;
   if (cameraIdleTimer) { clearTimeout(cameraIdleTimer); cameraIdleTimer = null; }
@@ -521,7 +569,7 @@ function armCameraIdle() {
   cameraIdleTimer = setTimeout(() => {
     if (!cameraOn) return;
     stopCamera();
-    showCamStart('המצלמה כובתה אוטומטית עקב חוסר שימוש — הקש/י כדי להפעיל שוב 📷');
+    showCamStart('המצלמה כובתה אוטומטית עקב חוסר שימוש — הקש/י כדי להפעיל שוב');
   }, CAMERA_IDLE_MS);
 }
 
@@ -665,7 +713,7 @@ function renderScanStats() {
 function renderPending() {
   const n = cloudEnabled() ? Object.keys(state.dirty).length : 0;
   $$('.pending-badge').forEach(el => {
-    el.textContent = n ? ('⏳ ' + n + ' ממתינות') : (cloudEnabled() ? '✅ מסונכרן' : '');
+    el.innerHTML = n ? (ic('cloudOff') + ' ' + n + ' ממתינות') : (cloudEnabled() ? (ic('cloud') + ' מסונכרן') : '');
     el.classList.toggle('hidden', !cloudEnabled());
     el.classList.toggle('pending-on', n > 0);
   });
@@ -683,11 +731,11 @@ function renderSessionLog() {
   const list = $('#batchList');
   if (!list) return;
   if (!log.length) { list.innerHTML = '<p class="muted small center">עדיין לא נסרק דבר בסבב הזה.</p>'; return; }
-  const icon = k => k === 'ok' ? '🟢' : k === 'dup' ? '🔁' : '🔴';
+  const glyph = k => k === 'ok' ? ic('check', 'ok') : k === 'dup' ? ic('copy', 'dup') : ic('help', 'unknown');
   list.innerHTML = log.map(e =>
-    `<div class="batch-row"><span class="batch-ico">${icon(e.kind)}</span>` +
+    `<div class="batch-row"><span class="batch-ico">${glyph(e.kind)}</span>` +
     `<span class="batch-code">${esc(e.code)}</span>` +
-    `<button class="batch-undo" data-undo-code="${esc(e.code)}" title="בטל">✕</button></div>`
+    `<button class="batch-undo" data-undo-code="${esc(e.code)}" title="בטל">${ic('close')}</button></div>`
   ).join('');
 }
 
@@ -743,7 +791,7 @@ function stationBreakdown() {
   const body = rows.map(([st, n]) => {
     const pct = total ? Math.round(n / total * 100) : 0;
     const meTag = st === me ? ' <span class="tag instock">את/ה</span>' : '';
-    return `<tr><td>👤 ${esc(st)}${meTag}</td><td>${n.toLocaleString()}</td>` +
+    return `<tr><td>${ic('user', 'muted')} ${esc(st)}${meTag}</td><td>${n.toLocaleString()}</td>` +
       `<td><div class="mini-bar"><div style="width:${pct}%"></div></div><span class="muted small">${pct}%</span></td></tr>`;
   }).join('');
   return `<div class="scroll"><table><thead><tr><th>עמדה / עובדת</th><th>פאות שנסרקו</th><th>חלק</th></tr></thead><tbody>${body}</tbody></table></div>`;
@@ -828,21 +876,21 @@ function lookupCard(query) {
   const scans = effectiveScans();
   const scanned = bc in scans ? scans[bc].count : 0;
   if (!inInv && !scanned) {
-    return `<div class="lookup none"><div class="lookup-bc">🔎 ${esc(bc)}</div>` +
+    return `<div class="lookup none"><div class="lookup-bc">${ic('search', 'muted')} ${esc(bc)}</div>` +
       `<div class="lookup-line">לא נמצאה — לא בקובץ המלאי וגם לא נסרקה.</div></div>`;
   }
   const status = inInv ? state.inventory[bc] : null;
-  let cls, verdict;
-  if (!inInv) { cls = 'unknown'; verdict = '❓ ברקוד לא מוכר — נסרק אך לא קיים בקובץ'; }
-  else if (isInStore(status) && scanned) { cls = 'ok'; verdict = '✅ תקין — במלאי ונסרקה'; }
-  else if (isInStore(status) && !scanned) { cls = 'bad'; verdict = '❌ חסרה — אמורה בחנות אך לא נסרקה'; }
-  else if (!isInStore(status) && scanned) { cls = 'warn'; verdict = '⚠️ בחנות אך מסומנת אחרת — צריך להחזיר ל-in-stock'; }
-  else { cls = 'muted'; verdict = 'רשומה בשיטס, לא אמורה להיות בחנות ולא נסרקה'; }
+  let cls, glyph, verdict;
+  if (!inInv) { cls = 'unknown'; glyph = 'help'; verdict = 'ברקוד לא מוכר — נסרק אך לא קיים בקובץ'; }
+  else if (isInStore(status) && scanned) { cls = 'ok'; glyph = 'check'; verdict = 'תקין — במלאי ונסרקה'; }
+  else if (isInStore(status) && !scanned) { cls = 'bad'; glyph = 'x'; verdict = 'חסרה — אמורה בחנות אך לא נסרקה'; }
+  else if (!isInStore(status) && scanned) { cls = 'warn'; glyph = 'alert'; verdict = 'בחנות אך מסומנת אחרת — צריך להחזיר ל-in-stock'; }
+  else { cls = 'muted'; glyph = 'info'; verdict = 'רשומה בשיטס, לא אמורה להיות בחנות ולא נסרקה'; }
   const d = state.cloudDetail && state.cloudDetail[bc];
   const station = d && d.station ? `<div class="lookup-line">עמדה: <b>${esc(d.station)}</b></div>` : '';
   return `<div class="lookup ${cls}">
-    <div class="lookup-bc">🔎 ${esc(bc)}</div>
-    <div class="lookup-verdict">${verdict}</div>
+    <div class="lookup-bc">${esc(bc)}</div>
+    <div class="lookup-verdict">${ic(glyph)} ${verdict}</div>
     <div class="lookup-line">סטטוס בשיטס: <b>${inInv ? esc(status) : '—'}</b></div>
     <div class="lookup-line">נסרקה: <b>${scanned ? ('כן · ' + scanned + ' פעמים') : 'לא'}</b></div>
     ${station}
@@ -868,11 +916,11 @@ function renderReport() {
     return d && d.station ? esc(d.station) : '<span class="muted">—</span>';
   } };
   const delCol = { label: '', render: i =>
-    `<button class="del-btn" data-del-code="${esc(i.barcode)}" title="מחק סריקה">🗑</button>` };
+    `<button class="del-btn" data-del-code="${esc(i.barcode)}" title="מחק סריקה">${ic('trash')}</button>` };
   const expected = r.expectedInStock;
   const pct = expected ? Math.round(r.ok.length / expected * 100) : 0;
   const cloudLine = cloudEnabled()
-    ? `<span class="muted small">☁️ ${esc(state.countId)} · ${state.cloudDevices || 0} עמדות</span>`
+    ? `<span class="muted small">${ic('cloud','muted')} ${esc(state.countId)} · ${state.cloudDevices || 0} עמדות</span>`
     : `<span class="muted small">מקומי</span>`;
 
   const fOther = filt(r.foundOther), fMissing = filt(r.missing), fUnknown = filt(r.unknown),
@@ -883,50 +931,51 @@ function renderReport() {
     <div class="card">
       <div class="rep-head">
         <h2>דוח ספירה</h2>
-        <button class="btn ghost small-btn" data-report-refresh>🔄 רענן</button>
+        <button class="btn ghost small-btn" data-report-refresh>${ic('refresh')} רענן</button>
       </div>
       ${cloudLine}
       <div class="progress" title="${pct}%"><div class="progress-bar" style="width:${pct}%"></div></div>
       <p class="muted small">נסרקו <b>${r.ok.length.toLocaleString()}</b> מתוך <b>${expected.toLocaleString()}</b> שאמורות להיות בחנות (<b>${pct}%</b>)</p>
       <div class="stats">
-        <div class="stat total" data-jump="acc-status" tabindex="0"><div class="num">${r.totalInventory.toLocaleString()}</div><div class="lbl">סה"כ במלאי (שיטס)</div></div>
-        <div class="stat" data-jump="acc-ok" tabindex="0"><div class="num">${r.totalScanned.toLocaleString()}</div><div class="lbl">נסרקו פיזית</div></div>
-        <div class="stat ok" data-jump="acc-ok" tabindex="0"><div class="num">${r.ok.length.toLocaleString()}</div><div class="lbl">✅ תקין (במלאי + נסרק)</div></div>
-        <div class="stat bad" data-jump="acc-missing" tabindex="0"><div class="num">${r.missing.length.toLocaleString()}</div><div class="lbl">❌ חסר (אמור בחנות, לא נסרק)</div></div>
-        <div class="stat warn" data-jump="acc-other" tabindex="0"><div class="num">${r.foundOther.length.toLocaleString()}</div><div class="lbl">⚠️ בחנות אך מסומן אחרת</div></div>
-        <div class="stat unknown" data-jump="acc-unknown" tabindex="0"><div class="num">${r.unknown.length.toLocaleString()}</div><div class="lbl">❓ ברקוד לא מוכר</div></div>
+        <div class="stat total" data-jump="acc-status" tabindex="0">${ic('file', 'stat-ic')}<div class="num">${r.totalInventory.toLocaleString()}</div><div class="lbl">סה"כ במלאי</div></div>
+        <div class="stat" data-jump="acc-ok" tabindex="0">${ic('scan', 'stat-ic')}<div class="num">${r.totalScanned.toLocaleString()}</div><div class="lbl">נסרקו פיזית</div></div>
+        <div class="stat ok" data-jump="acc-ok" tabindex="0">${ic('check', 'stat-ic')}<div class="num">${r.ok.length.toLocaleString()}</div><div class="lbl">תקין · במלאי ונסרק</div></div>
+        <div class="stat bad" data-jump="acc-missing" tabindex="0">${ic('x', 'stat-ic')}<div class="num">${r.missing.length.toLocaleString()}</div><div class="lbl">חסר · לא נסרק</div></div>
+        <div class="stat warn" data-jump="acc-other" tabindex="0">${ic('alert', 'stat-ic')}<div class="num">${r.foundOther.length.toLocaleString()}</div><div class="lbl">מסומן אחרת</div></div>
+        <div class="stat unknown" data-jump="acc-unknown" tabindex="0">${ic('help', 'stat-ic')}<div class="num">${r.unknown.length.toLocaleString()}</div><div class="lbl">לא מוכר</div></div>
       </div>
       <p class="muted small" style="margin-top:10px">צפוי בחנות (in-stock+consignment): <b>${expected.toLocaleString()}</b> · כפילויות: <b>${r.duplicates.length}</b> · הקישי על ריבוע לקפיצה לנתונים שלו</p>
       <div class="search-row">
-        <input id="reportSearch" class="search-input" inputmode="search" autocomplete="off" placeholder="🔎 חיפוש / בדיקת סטטוס של פאה" value="${esc(reportQuery)}">
-        <button id="reportScanBtn" class="icon-btn" title="סרוק ברקוד לבדיקת סטטוס">📷</button>
+        <span class="search-ic">${ic('search', 'muted')}</span>
+        <input id="reportSearch" class="search-input" inputmode="search" autocomplete="off" placeholder="חיפוש / בדיקת סטטוס של פאה" value="${esc(reportQuery)}">
+        <button id="reportScanBtn" class="icon-btn" title="סרוק ברקוד לבדיקת סטטוס">${ic('camera')}</button>
         ${q ? `<span class="muted small">נמצאו: ${(fOther.length + fMissing.length + fUnknown.length + fOk.length).toLocaleString()}</span>` : ''}
       </div>
       ${lookupCard(reportQuery)}
     </div>
 
-    <div id="acc-other">${accCard('⚠️ בחנות אך מסומן אחרת', r.foundOther.length,
+    <div id="acc-other">${accCard(ic('alert', 'warn') + ' בחנות אך מסומן אחרת', r.foundOther.length,
       'נסרקו פיזית אך לא רשומות כ-in-stock — צריך להחזיר ל-in-stock',
       tableFor(fOther, [bcCol, statusCol, stationCol, delCol]), r.foundOther.length > 0 || openIf(fOther.length))}</div>
 
-    <div id="acc-missing">${accCard('❌ חסרות', r.missing.length,
+    <div id="acc-missing">${accCard(ic('x', 'bad') + ' חסרות', r.missing.length,
       'אמורות בחנות אך לא נסרקו — כנראה נמכרו/אבדו ולא עודכן',
       tableFor(fMissing, [bcCol]), openIf(fMissing.length))}</div>
 
-    <div id="acc-unknown">${accCard('❓ ברקודים לא מוכרים', r.unknown.length,
+    <div id="acc-unknown">${accCard(ic('help', 'unknown') + ' ברקודים לא מוכרים', r.unknown.length,
       'נסרקו אך לא קיימים בקובץ המלאי',
       tableFor(fUnknown, [bcCol, countCol, stationCol, delCol]), openIf(fUnknown.length))}</div>
 
-    <div id="acc-dup">${accCard('🔁 כפילויות', r.duplicates.length, 'נסרקו יותר מפעם אחת',
+    <div id="acc-dup">${accCard(ic('copy', 'dup') + ' כפילויות', r.duplicates.length, 'נסרקו יותר מפעם אחת',
       tableFor(fDup, [bcCol, countCol]), openIf(fDup.length))}</div>
 
-    <div id="acc-ok">${accCard('✅ תקין', r.ok.length, 'במלאי ונסרקו כמו שצריך',
+    <div id="acc-ok">${accCard(ic('check', 'ok') + ' תקין', r.ok.length, 'במלאי ונסרקו כמו שצריך',
       tableFor(fOk, [bcCol, stationCol, delCol]), openIf(fOk.length))}</div>
 
-    <div id="acc-stations">${accCard('👥 פילוח לפי עמדה / עובדת', Object.keys(state.cloudDetail || {}).length ? (state.cloudDevices || '') : '',
+    <div id="acc-stations">${accCard(ic('users') + ' פילוח לפי עמדה / עובדת', Object.keys(state.cloudDetail || {}).length ? (state.cloudDevices || '') : '',
       'כמה פאות סרקה כל עמדה', stationBreakdown())}</div>
 
-    <div id="acc-status">${accCard('📋 פילוח לפי סטטוס בשיטס', r.totalInventory.toLocaleString(),
+    <div id="acc-status">${accCard(ic('bars') + ' פילוח לפי סטטוס בשיטס', r.totalInventory.toLocaleString(),
       'כמה מכל סטטוס — וכמה נסרקו', statusBreakdownTable())}</div>
   `;
 
@@ -948,7 +997,7 @@ function renderInventoryStatus() {
   const rows = Object.entries(counts).sort((a, b) => b[1] - a[1])
     .map(([s, c]) => `<tr><td><span class="tag ${isInStore(s) ? 'instock' : 'other'}">${esc(s)}</span></td><td>${c.toLocaleString()}</td></tr>`).join('');
   el.innerHTML = `
-    <p>✅ נטענו <b>${n.toLocaleString()}</b> פאות.</p>
+    <p class="inv-loaded">${ic('check','ok')} נטענו <b>${n.toLocaleString()}</b> פאות.</p>
     <div class="scroll"><table><thead><tr><th>סטטוס</th><th>כמות</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -1126,10 +1175,10 @@ function renderExportPreview() {
   };
   const recon = dataReconciliation(), upd = dataUpdates(), raw = dataScans(), st = dataStations();
   el.innerHTML =
-    accCard('📄 דוח התאמה מלא', (recon.length - 1).toLocaleString(), 'כל פאה עם הקטגוריה שלה', tbl(recon), true) +
-    accCard('✏️ עדכוני סטטוס מוצעים', (upd.length - 1).toLocaleString(), 'התיקונים להחזרה לשיטס', tbl(upd)) +
-    accCard('👥 פילוח לפי עמדה', (st.length - 1).toLocaleString(), 'כמה סרקה כל עמדה', tbl(st)) +
-    accCard('🗂 סריקות גולמיות', (raw.length - 1).toLocaleString(), 'גיבוי / מיזוג', tbl(raw));
+    accCard(ic('file') + ' דוח התאמה מלא', (recon.length - 1).toLocaleString(), 'כל פאה עם הקטגוריה שלה', tbl(recon), true) +
+    accCard(ic('edit') + ' עדכוני סטטוס מוצעים', (upd.length - 1).toLocaleString(), 'התיקונים להחזרה לשיטס', tbl(upd)) +
+    accCard(ic('users') + ' פילוח לפי עמדה', (st.length - 1).toLocaleString(), 'כמה סרקה כל עמדה', tbl(st)) +
+    accCard(ic('archive') + ' סריקות גולמיות', (raw.length - 1).toLocaleString(), 'גיבוי / מיזוג', tbl(raw));
 }
 
 /* Merge another device's raw-scans CSV into this one (for multi-worker counts). */
@@ -1269,9 +1318,9 @@ function setCloudStatus(kind, data) {
   if (!el) return;
   if (!cloudEnabled()) { el.innerHTML = '<span class="muted small">מקומי בלבד — לא מוגדר ענן.</span>'; return; }
   const map = {
-    ok: ['ok', '✅ מסונכרן'],
-    syncing: ['dup', '⏳ מסנכרן…'],
-    offline: ['warn', '⚠️ אין חיבור — יסונכרן אוטומטית כשתחזור רשת']
+    ok: ['ok', ic('cloud') + ' מסונכרן'],
+    syncing: ['dup', ic('refresh') + ' מסנכרן…'],
+    offline: ['warn', ic('cloudOff') + ' אין חיבור — יסונכרן אוטומטית כשתחזור רשת']
   };
   const [cls, label] = map[kind] || map.ok;
   const extra = (kind === 'ok' && data) ? ` · ${data.barcodes || 0} ברקודים · ${data.devices || 0} עמדות` : '';
@@ -1316,7 +1365,7 @@ function showInstallBar(mode) {
     txt.innerHTML = 'להתקנה: שיתוף ⬆️ ← "הוסף למסך הבית"';
   } else {
     btn.classList.remove('hidden');
-    txt.textContent = 'התקן את האפליקציה למסך הבית 📲';
+    txt.textContent = 'התקן את האפליקציה למסך הבית';
   }
   bar.classList.remove('hidden');
 }
@@ -1355,8 +1404,8 @@ function hasStation() { return !!(state.session && state.session.trim()); }
 function updateStationChip() {
   const chip = $('#stationChip');
   if (!chip) return;
-  if (hasStation()) { chip.textContent = '👤 ' + state.session.trim(); chip.classList.remove('warn'); }
-  else { chip.textContent = '⚠️ הגדר עמדה'; chip.classList.add('warn'); }
+  if (hasStation()) { chip.innerHTML = ic('user') + ' ' + esc(state.session.trim()); chip.classList.remove('warn'); }
+  else { chip.innerHTML = ic('alert') + ' הגדר עמדה'; chip.classList.add('warn'); }
 }
 
 // Station is mandatory before scanning — show a gate until it's filled.
@@ -1393,6 +1442,9 @@ function showTab(name) {
 
 function init() {
   load();
+
+  // paint all static [data-ic] placeholders from the one icon set
+  $$('[data-ic]').forEach(el => { el.innerHTML = ic(el.getAttribute('data-ic')); });
 
   // session / station name (now lives in Settings; mandatory before scanning)
   const sess = $('#sessionName');
@@ -1671,7 +1723,7 @@ async function loadFromSheet(alertOnError) {
     const res = importInventory(text);
     if (res.error) throw new Error(res.error);
     renderInventoryStatus(); renderReport(); renderScanStats();
-    setNote('var(--ok)', `✅ נטענו ${res.added.toLocaleString()} פאות מהשיטס`);
+    setNote('var(--ok)', `נטענו ${res.added.toLocaleString()} פאות מהשיטס`);
     // share this inventory source with the whole count so other stations auto-load it
     if (alertOnError && cloudEnabled()) {
       try {
@@ -1682,7 +1734,7 @@ async function loadFromSheet(alertOnError) {
       } catch (e) { /* non-fatal */ }
     }
   } catch (e) {
-    setNote('var(--bad)', '❌ ' + e.message);
+    setNote('var(--bad)', e.message);
     if (alertOnError) alert('לא הצלחתי לטעון מהשיטס: ' + e.message);
   }
 }
@@ -1714,9 +1766,9 @@ async function writeToSheet() {
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) throw new Error(j.error || ('שגיאה ' + r.status));
-    setNote('var(--ok)', `✅ נכתב לשיטס — ${j.written} פאות (עמודות: נסרק / תאריך / עמדה). מכאן זה נכתב אוטומטית.`);
+    setNote('var(--ok)', `נכתב לשיטס — ${j.written} פאות (עמודות: נסרק / תאריך / עמדה). מכאן זה נכתב אוטומטית.`);
   } catch (e) {
-    setNote('var(--bad)', '❌ ' + e.message);
+    setNote('var(--bad)', e.message);
   }
 }
 

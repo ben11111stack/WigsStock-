@@ -31,15 +31,15 @@
   <main>
 
     <div id="installBar" class="install-bar hidden">
-      <span id="installText">התקן את האפליקציה למסך הבית 📲</span>
+      <span id="installText">התקן את האפליקציה למסך הבית</span>
       <span class="install-actions">
         <button id="installBtn" class="btn small-btn">התקן</button>
-        <button id="installClose" class="icon-btn" title="סגור">✕</button>
+        <button id="installClose" class="icon-btn" title="סגור" data-ic="close"></button>
       </span>
     </div>
 
     <div id="updateBar" class="install-bar update-bar hidden">
-      <span>🔄 גרסה חדשה זמינה</span>
+      <span><span data-ic="refresh"></span> גרסה חדשה זמינה</span>
       <span class="install-actions">
         <button id="updateBtn" class="btn small-btn">עדכן עכשיו</button>
       </span>
@@ -49,33 +49,21 @@
     <section id="panel-load" class="tab">
       <div class="sec-head" style="padding-inline:18px">מלאי הפאות</div>
 
-      <div class="card intro-card">
-        <div class="intro-title">📄 רשימת האמת של החנות</div>
-        <p class="muted small">כאן <b>טוענים</b> את קובץ כל הפאות — כל פאה והסטטוס שלה. מול הרשימה הזו האפליקציה משווה את מה שנסרק פיזית. את <b>תוצאות ההשוואה</b> רואים בלשונית <b>"דוח"</b>.</p>
-        <div class="intro-flow">
-          <span class="intro-step">📄 מלאי<small>מה שאמור להיות</small></span>
-          <span class="intro-arrow">→</span>
-          <span class="intro-step">📷 סריקה<small>מה שיש בפועל</small></span>
-          <span class="intro-arrow">→</span>
-          <span class="intro-step">📊 דוח<small>ההפרש</small></span>
-        </div>
-      </div>
-
       <div class="card">
         <div id="invStatus"></div>
       </div>
 
-      <div class="sec-head" style="padding-inline:18px">איך טוענים מלאי</div>
+      <div class="sec-head" style="padding-inline:18px">טעינת מלאי</div>
       <div class="card">
         <button class="load-opt" id="goSheetSettings" type="button">
-          <span class="load-opt-ico">☁️</span>
+          <span class="load-opt-ico" data-ic="cloud"></span>
           <span class="load-opt-txt"><b>מגוגל שיטס</b><small class="muted">נטען ומתרענן אוטומטית בכל העמדות · מומלץ</small></span>
-          <span class="load-opt-go">›</span>
+          <span class="load-opt-go" data-ic="chevron"></span>
         </button>
 
         <div class="or-divider"><span>או טעינה ידנית</span></div>
 
-        <label class="file-label" for="invFile">📁 בחרי קובץ CSV · או גררי לכאן</label>
+        <label class="file-label" for="invFile"><span data-ic="folder"></span> בחרי קובץ CSV · או גררי לכאן</label>
         <input type="file" id="invFile" accept=".csv,text/csv">
         <details>
           <summary class="muted small">או הדביקי את הנתונים ידנית</summary>
@@ -89,14 +77,14 @@
       </div>
 
       <div class="card">
-        <button class="btn danger" id="clearInv">🗑 מחק את המלאי הטעון</button>
+        <button class="btn danger" id="clearInv"><span data-ic="trash"></span> מחק את המלאי הטעון</button>
       </div>
     </section>
 
     <!-- ==================== SCAN ==================== -->
     <section id="panel-scan" class="tab">
       <div id="stationGate" class="card hidden">
-        <h2>⚠️ חסר שם עמדה</h2>
+        <h2><span data-ic="alert" class="gate-ic"></span> חסר שם עמדה</h2>
         <p class="muted small">חובה להזין שם עמדה / משתמש לפני סריקה — כדי לדעת מי סרק כל פאה.</p>
         <div class="spacer"></div>
         <label class="fld">שם עמדה / משתמש
@@ -108,19 +96,19 @@
         <div id="reader">
           <video id="video" playsinline muted autoplay></video>
           <div class="scan-frame"></div>
-          <button id="camStart" class="cam-start">📷 הקש להפעלת המצלמה</button>
+          <button id="camStart" class="cam-start"><span data-ic="camera"></span> הקש להפעלת המצלמה</button>
         </div>
         <p class="small muted center" id="cameraNote"></p>
         <div id="scanBanner" class="scan-banner"><div class="msg muted">פותח מצלמה…</div></div>
         <div class="scan-tools">
           <span class="scan-mini"><b id="scanCount">0</b> נסרקו <span class="pending-badge hidden"></span></span>
           <span class="scan-tools-btns">
-            <button id="undoBtn" class="icon-btn" title="בטל סריקה אחרונה" disabled>↩︎</button>
-            <button id="redoBtn" class="icon-btn" title="החזר סריקה" disabled>↪︎</button>
-            <button id="batchBtn" class="icon-btn" title="מצב רשימה (באטש)">📋</button>
-            <button id="flashBtn" class="icon-btn hidden" title="פלאש">🔦</button>
-            <button id="cameraBtn" class="icon-btn" title="הפעל/עצור מצלמה">📷</button>
-            <button id="resetScans" class="icon-btn danger" title="אפס סריקות">↺</button>
+            <button id="undoBtn" class="icon-btn" title="בטל סריקה אחרונה" data-ic="undo" disabled></button>
+            <button id="redoBtn" class="icon-btn" title="החזר סריקה" data-ic="redo" disabled></button>
+            <button id="batchBtn" class="icon-btn" title="מצב רשימה (באטש)" data-ic="list"></button>
+            <button id="flashBtn" class="icon-btn hidden" title="פלאש" data-ic="zap"></button>
+            <button id="cameraBtn" class="icon-btn" title="הפעל/עצור מצלמה" data-ic="camera"></button>
+            <button id="resetScans" class="icon-btn danger" title="אפס סריקות" data-ic="reset"></button>
           </span>
         </div>
         <div class="scan-input-row">
@@ -148,7 +136,7 @@
     <section id="panel-export" class="tab">
       <div class="sec-head" style="padding-inline:18px">ייצוא תוצאות</div>
       <div class="card">
-        <button class="btn" id="expExcel">⬇️ הורד ל-Excel (xlsx) — כל הדוחות</button>
+        <button class="btn" id="expExcel"><span data-ic="download"></span> הורד ל-Excel (xlsx) — כל הדוחות</button>
         <div class="hint">קובץ Excel אחד עם לשונית לכל דוח, נפתח מושלם בעברית (בלי ג'יבריש).</div>
         <div class="spacer"></div>
         <details>
@@ -181,7 +169,7 @@
 
       <div class="acc open">
         <button class="acc-head">
-          <span class="acc-titles"><span class="acc-title">👤 עמדה ומשתמש</span><span class="acc-sub">שם העמדה — חובה לפני סריקה</span></span>
+          <span class="acc-titles"><span class="acc-title"><span data-ic="user"></span> עמדה ומשתמש</span><span class="acc-sub">שם העמדה — חובה לפני סריקה</span></span>
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </button>
         <div class="acc-body">
@@ -194,7 +182,7 @@
 
       <div class="acc">
         <button class="acc-head">
-          <span class="acc-titles"><span class="acc-title">📄 מלאי מגוגל שיטס</span><span class="acc-sub">טעינת המלאי מקישור לגיליון</span></span>
+          <span class="acc-titles"><span class="acc-title"><span data-ic="cloud"></span> מלאי מגוגל שיטס</span><span class="acc-sub">טעינת המלאי מקישור לגיליון</span></span>
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </button>
         <div class="acc-body">
@@ -209,7 +197,7 @@
 
       <div class="acc">
         <button class="acc-head">
-          <span class="acc-titles"><span class="acc-title">☁️ סנכרון ענן</span><span class="acc-sub">מצב הסנכרון בין העמדות</span></span>
+          <span class="acc-titles"><span class="acc-title"><span data-ic="cloud"></span> סנכרון ענן</span><span class="acc-sub">מצב הסנכרון בין העמדות</span></span>
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </button>
         <div class="acc-body">
@@ -236,7 +224,7 @@
 
       <div class="acc">
         <button class="acc-head">
-          <span class="acc-titles"><span class="acc-title">✏️ כתיבה חזרה לשיטס</span><span class="acc-sub">נסרק / תאריך / עמדה — אוטומטי</span></span>
+          <span class="acc-titles"><span class="acc-title"><span data-ic="edit"></span> כתיבה חזרה לשיטס</span><span class="acc-sub">נסרק / תאריך / עמדה — אוטומטי</span></span>
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </button>
         <div class="acc-body">
@@ -251,7 +239,7 @@
 
       <div class="acc">
         <button class="acc-head">
-          <span class="acc-titles"><span class="acc-title">ℹ️ גרסאות ועדכונים</span><span class="acc-sub" id="curVersionSub">גרסה נוכחית</span></span>
+          <span class="acc-titles"><span class="acc-title"><span data-ic="info"></span> גרסאות ועדכונים</span><span class="acc-sub" id="curVersionSub">גרסה נוכחית</span></span>
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </button>
         <div class="acc-body">
@@ -268,7 +256,7 @@
     <div class="scan-overlay-inner">
       <div class="scan-overlay-head">
         <span>סרקי ברקוד לבדיקת סטטוס</span>
-        <button id="scanOverlayClose" class="icon-btn" title="סגור">✕</button>
+        <button id="scanOverlayClose" class="icon-btn" title="סגור" data-ic="close"></button>
       </div>
       <div class="overlay-reader">
         <video id="overlayVideo" playsinline muted autoplay></video>
@@ -283,13 +271,15 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
       מלאי
     </button>
-    <button id="tab-scan">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>
-      סריקה
-    </button>
     <button id="tab-report">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="13" y="7" width="3" height="10"/></svg>
       דוח
+    </button>
+    <button id="tab-scan" class="nav-fab" aria-label="סריקה">
+      <span class="fab-circle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>
+      </span>
+      <span class="fab-label">סריקה</span>
     </button>
     <button id="tab-export">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>

@@ -278,10 +278,14 @@ th { color: var(--ink-3); font-weight: 600; font-size: 12px; background: var(--s
 tr:last-child td { border-bottom: none; }
 td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .5px; }
 
-/* status chips (DORM scope-chip scale) */
-.tag { font-size: 9.5px; font-weight: 600; padding: 3px 6px; border-radius: 5px; letter-spacing: .01em; }
-.tag.instock { background: color-mix(in oklab, var(--ok) 14%, var(--bg)); color: color-mix(in oklab, var(--ok) 75%, var(--ink)); }
-.tag.other   { background: color-mix(in oklab, var(--warn) 16%, var(--bg)); color: color-mix(in oklab, var(--warn) 60%, var(--ink)); }
+/* status chips — calm, uniform. Green = should be in store; neutral = anything
+ * else (we reserve alarm colors for actual discrepancies in the report). */
+.tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600;
+  padding: 3px 9px; border-radius: 999px; letter-spacing: .01em; white-space: nowrap;
+  border: 1px solid transparent; }
+.tag::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .9; }
+.tag.instock { background: color-mix(in oklab, var(--ok) 11%, var(--bg)); color: color-mix(in oklab, var(--ok) 68%, var(--ink)); }
+.tag.other   { background: var(--surface-2); color: var(--ink-2); border-color: var(--line); }
 
 .badge {
   font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px;
@@ -337,6 +341,71 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
 }
 .bottomnav button svg { width: 21px; height: 21px; stroke-width: 1.65; }
 .bottomnav button.active { color: var(--primary); }
+.bottomnav { overflow: visible; }
+
+/* central scan FAB — elevated round button, premium-banking style */
+.nav-fab { position: relative; overflow: visible; justify-content: flex-end; padding-bottom: 5px; }
+.nav-fab .fab-circle {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, calc(-50% - 15px));
+  width: 56px; height: 56px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--primary); color: #fff;
+  border: 4px solid var(--bg);
+  box-shadow: 0 6px 15px color-mix(in oklab, var(--primary) 38%, transparent);
+  transition: transform .12s ease, box-shadow .2s ease;
+}
+.nav-fab .fab-circle svg { width: 25px; height: 25px; stroke-width: 2; color: #fff; }
+.nav-fab:active .fab-circle { transform: translate(-50%, calc(-50% - 15px)) scale(.93); }
+.nav-fab .fab-label { font-size: 10px; font-weight: 600; }
+.nav-fab.active { color: var(--primary); }
+.nav-fab.active .fab-circle { box-shadow: 0 8px 20px color-mix(in oklab, var(--primary) 52%, transparent); }
+
+/* ---------- Icon system ---------- */
+.ic { width: 1.15em; height: 1.15em; display: inline-block; vertical-align: -.18em; flex: none; }
+.ic.ok { color: var(--ok); }
+.ic.bad { color: var(--bad); }
+.ic.warn { color: var(--warn); }
+.ic.unknown { color: var(--unknown); }
+.ic.dup { color: var(--dup); }
+.ic.brand { color: var(--primary); }
+.ic.muted { color: var(--ink-3); }
+
+/* icon placements */
+.acc-title { display: flex; align-items: center; gap: 8px; }
+.acc-title .ic { width: 18px; height: 18px; }
+.icon-btn .ic { width: 20px; height: 20px; }
+.station-chip .ic { width: 15px; height: 15px; }
+.station-chip { display: inline-flex; align-items: center; gap: 5px; }
+.gate-ic { color: var(--warn); }
+h2 .gate-ic .ic { width: 20px; height: 20px; vertical-align: -.2em; }
+.inv-loaded { display: flex; align-items: center; gap: 7px; font-size: 14px; margin: 0 0 4px; }
+.inv-loaded .ic { width: 17px; height: 17px; }
+.search-ic { display: flex; align-items: center; color: var(--ink-3); }
+.search-ic .ic { width: 18px; height: 18px; }
+.pending-badge .ic { width: 12px; height: 12px; vertical-align: -1px; margin-inline-end: 2px; }
+.lookup-verdict { display: flex; align-items: center; gap: 7px; }
+.lookup-verdict .ic { width: 18px; height: 18px; }
+.batch-ico .ic { width: 17px; height: 17px; }
+.batch-undo .ic { width: 14px; height: 14px; }
+.load-opt-ico .ic { width: 22px; height: 22px; color: var(--primary); }
+.load-opt-go .ic { width: 20px; height: 20px; color: var(--ink-3); }
+.load-opt .btn .ic, .btn .ic { width: 17px; height: 17px; vertical-align: -.2em; }
+.cam-start .ic { width: 18px; height: 18px; }
+.cloudLine .ic, .muted .ic { vertical-align: -.16em; }
+td .ic { width: 15px; height: 15px; }
+.del-btn .ic { width: 16px; height: 16px; }
+.acc-sub .ic { width: 14px; height: 14px; }
+.scan-banner .msg .ic { width: 18px; height: 18px; vertical-align: -.2em; margin-inline-end: 2px; }
+
+/* stat cards — small status icon in the trailing-top corner */
+.stat { position: relative; }
+.ic.stat-ic { position: absolute; top: 11px; inset-inline-end: 12px; width: 16px; height: 16px; color: var(--ink-3); }
+.stat.total .ic.stat-ic { color: var(--primary); }
+.stat.ok .ic.stat-ic { color: var(--ok); }
+.stat.bad .ic.stat-ic { color: var(--bad); }
+.stat.warn .ic.stat-ic { color: var(--warn); }
+.stat.unknown .ic.stat-ic { color: var(--unknown); }
 
 /* ---------- v1.6 additions ---------- */
 .scan-tools { flex-wrap: wrap; }
@@ -385,16 +454,7 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
 .mini-bar { display: inline-block; width: 90px; height: 8px; border-radius: 5px; background: var(--surface-2); overflow: hidden; vertical-align: middle; margin-inline-end: 6px; }
 .mini-bar > div { height: 100%; background: var(--primary); border-radius: 5px; }
 
-/* inventory tab: intro + load options */
-.intro-card { background: var(--primary-weak); border-color: color-mix(in oklab, var(--primary) 22%, var(--line)); }
-.intro-title { font-size: 15px; font-weight: 620; color: var(--ink); margin-bottom: 6px; }
-.intro-flow { display: flex; align-items: stretch; gap: 6px; margin-top: 14px; }
-.intro-step { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 3px;
-  padding: 10px 6px; border-radius: var(--r-sm); background: var(--bg); border: 1px solid var(--line);
-  font-size: 13px; font-weight: 600; color: var(--ink); }
-.intro-step small { font-size: 10.5px; font-weight: 500; color: var(--ink-3); }
-.intro-arrow { display: flex; align-items: center; color: var(--ink-3); font-size: 16px; }
-
+/* inventory tab: load options */
 .load-opt { display: flex; align-items: center; gap: 12px; width: 100%; text-align: start; cursor: pointer;
   padding: 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); font-family: inherit; }
 .load-opt:active { transform: scale(.99); }
