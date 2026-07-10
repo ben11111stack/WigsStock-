@@ -23,8 +23,14 @@ const KNOWN_STATUSES = [
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.7.1';
+const APP_VERSION = '1.8.0';
 const CHANGELOG = [
+  { v: '1.8.0', notes: [
+    'בורר ערכות צבע גלובלי בהגדרות (כולל ורוד) + מצב כהה',
+    'עמוד המלאי עוצב מחדש — מספר גדול ומכובד ורשימה נקייה, בלי חלונית פנימית',
+    'עמוד הייצוא: כפתור Excel אחד יוקרתי + ייצוא לכל קטגוריה בנפרד, בלי CSV והסברים',
+    'עמוד הדוחות נוקה מהסברים, כל הקטגוריות סגורות כברירת מחדל'
+  ] },
   { v: '1.7.1', notes: [
     'תיקון עדכונים "תקועים" — קבצי הליבה נמשכים תמיד טריים מהרשת, ובדיקת עדכון יזומה בכל פתיחה'
   ] },
@@ -76,8 +82,43 @@ const state = {
   lastResetSeen: 0,  // cloud reset generation this device has applied
   sessionLog: [],    // recent scans on THIS device: [{code, ts, kind}] (newest last, capped)
   batchMode: false,  // show the live recent-scans list on the scan tab
-  apiKey: ''         // optional shared secret (only needed if the Worker enforces one)
+  apiKey: '',        // optional shared secret (only needed if the Worker enforces one)
+  accent: '',        // brand accent theme key (see ACCENTS; '' = default)
+  dark: false        // dark appearance
 };
+
+/* ---------- Appearance / brand themes ----------
+ * Changing --primary re-themes the whole app (buttons, nav, FAB, active tab,
+ * links, progress) since everything reads that one token — so a theme is global
+ * by construction. Dark mode overrides the neutral tokens in CSS. */
+const ACCENTS = {
+  blue:   { name: 'כחול',   v: 'oklch(0.55 0.11 210)' },
+  pink:   { name: 'ורוד',   v: 'oklch(0.62 0.16 350)' },
+  purple: { name: 'סגול',   v: 'oklch(0.55 0.16 300)' },
+  teal:   { name: 'טורקיז', v: 'oklch(0.60 0.10 190)' },
+  rose:   { name: 'רוזה',   v: 'oklch(0.60 0.17 18)' },
+  green:  { name: 'ירוק',   v: 'oklch(0.56 0.12 155)' }
+};
+function accentKey() { return ACCENTS[state.accent] ? state.accent : 'blue'; }
+function applyTheme() {
+  const root = document.documentElement;
+  root.style.setProperty('--primary', ACCENTS[accentKey()].v);
+  root.setAttribute('data-theme', state.dark ? 'dark' : 'light');
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = state.dark ? '#191920' : '#ffffff';
+}
+
+// Jump to Settings and expand the Google-Sheets section (the one place to load).
+function openSheetSettings() {
+  navigate('settings');
+  setTimeout(() => {
+    const head = $$('#panel-settings .acc-head').find(h => /גוגל שיטס/.test(h.textContent));
+    if (head && head.parentElement) {
+      head.parentElement.classList.add('open');
+      head.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, 60);
+}
 
 const LS_KEY = 'wigsstock_v1';
 
@@ -144,7 +185,8 @@ const ICONS = {
   upload:   '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 9 5-5 5 5"/><path d="M12 4v12"/>',
   archive:  '<rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/>',
   info:     '<circle cx="12" cy="12" r="9"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
-  chevron:  '<path d="m15 18-6-6 6-6"/>'
+  chevron:  '<path d="m15 18-6-6 6-6"/>',
+  palette:  '<circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.5-.7 1.5-1.5 0-.4-.2-.8-.4-1-.3-.3-.4-.6-.4-1 0-.8.7-1.5 1.5-1.5H16c3.3 0 6-2.7 6-6 0-4.9-4.5-9-10-9z"/>'
 };
 function ic(name, cls) {
   return `<svg class="ic${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
@@ -947,7 +989,6 @@ function renderReport() {
         <div class="stat warn" data-jump="acc-other" tabindex="0">${ic('alert', 'stat-ic')}<div class="num">${r.foundOther.length.toLocaleString()}</div><div class="lbl">מסומן אחרת</div></div>
         <div class="stat unknown" data-jump="acc-unknown" tabindex="0">${ic('help', 'stat-ic')}<div class="num">${r.unknown.length.toLocaleString()}</div><div class="lbl">לא מוכר</div></div>
       </div>
-      <p class="muted small" style="margin-top:10px">צפוי בחנות (in-stock+consignment): <b>${expected.toLocaleString()}</b> · כפילויות: <b>${r.duplicates.length}</b> · הקישי על ריבוע לקפיצה לנתונים שלו</p>
       <div class="search-row">
         <span class="search-ic">${ic('search', 'muted')}</span>
         <input id="reportSearch" class="search-input" inputmode="search" autocomplete="off" placeholder="חיפוש / בדיקת סטטוס של פאה" value="${esc(reportQuery)}">
@@ -958,28 +999,25 @@ function renderReport() {
     </div>
 
     <div id="acc-other">${accCard(ic('alert', 'warn') + ' בחנות אך מסומן אחרת', r.foundOther.length,
-      'נסרקו פיזית אך לא רשומות כ-in-stock — צריך להחזיר ל-in-stock',
-      tableFor(fOther, [bcCol, statusCol, stationCol, delCol]), r.foundOther.length > 0 || openIf(fOther.length))}</div>
+      '', tableFor(fOther, [bcCol, statusCol, stationCol, delCol]), openIf(fOther.length))}</div>
 
     <div id="acc-missing">${accCard(ic('x', 'bad') + ' חסרות', r.missing.length,
-      'אמורות בחנות אך לא נסרקו — כנראה נמכרו/אבדו ולא עודכן',
-      tableFor(fMissing, [bcCol]), openIf(fMissing.length))}</div>
+      '', tableFor(fMissing, [bcCol]), openIf(fMissing.length))}</div>
 
     <div id="acc-unknown">${accCard(ic('help', 'unknown') + ' ברקודים לא מוכרים', r.unknown.length,
-      'נסרקו אך לא קיימים בקובץ המלאי',
-      tableFor(fUnknown, [bcCol, countCol, stationCol, delCol]), openIf(fUnknown.length))}</div>
+      '', tableFor(fUnknown, [bcCol, countCol, stationCol, delCol]), openIf(fUnknown.length))}</div>
 
-    <div id="acc-dup">${accCard(ic('copy', 'dup') + ' כפילויות', r.duplicates.length, 'נסרקו יותר מפעם אחת',
+    <div id="acc-dup">${accCard(ic('copy', 'dup') + ' כפילויות', r.duplicates.length, '',
       tableFor(fDup, [bcCol, countCol]), openIf(fDup.length))}</div>
 
-    <div id="acc-ok">${accCard(ic('check', 'ok') + ' תקין', r.ok.length, 'במלאי ונסרקו כמו שצריך',
+    <div id="acc-ok">${accCard(ic('check', 'ok') + ' תקין', r.ok.length, '',
       tableFor(fOk, [bcCol, stationCol, delCol]), openIf(fOk.length))}</div>
 
     <div id="acc-stations">${accCard(ic('users') + ' פילוח לפי עמדה / עובדת', Object.keys(state.cloudDetail || {}).length ? (state.cloudDevices || '') : '',
-      'כמה פאות סרקה כל עמדה', stationBreakdown())}</div>
+      '', stationBreakdown())}</div>
 
     <div id="acc-status">${accCard(ic('bars') + ' פילוח לפי סטטוס בשיטס', r.totalInventory.toLocaleString(),
-      'כמה מכל סטטוס — וכמה נסרקו', statusBreakdownTable())}</div>
+      '', statusBreakdownTable())}</div>
   `;
 
   const search = $('#reportSearch');
@@ -994,14 +1032,36 @@ function renderReport() {
 function renderInventoryStatus() {
   const n = Object.keys(state.inventory).length;
   const el = $('#invStatus');
-  if (!n) { el.innerHTML = '<span class="muted">לא נטען מלאי עדיין.</span>'; return; }
+  if (!el) return;
+  if (!n) {
+    el.innerHTML = `
+      <div class="inv-empty">
+        <div class="inv-empty-ic">${ic('file')}</div>
+        <div class="inv-empty-title">אין מלאי טעון</div>
+        <p class="muted">המלאי נטען מגוגל שיטס בהגדרות ומתעדכן אוטומטית בכל העמדות.</p>
+        <button class="btn" id="invEmptyLoad">${ic('cloud')} טען מגוגל שיטס</button>
+      </div>`;
+    const go = $('#invEmptyLoad');
+    if (go) go.onclick = openSheetSettings;
+    return;
+  }
   const counts = {};
   for (const s of Object.values(state.inventory)) counts[s] = (counts[s] || 0) + 1;
-  const rows = Object.entries(counts).sort((a, b) => b[1] - a[1])
-    .map(([s, c]) => `<tr><td><span class="tag ${isInStore(s) ? 'instock' : 'other'}">${esc(s)}</span></td><td>${c.toLocaleString()}</td></tr>`).join('');
+  const inStore = Object.entries(counts).filter(([s]) => isInStore(s)).reduce((a, [, c]) => a + c, 0);
+  const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([s, c]) => {
+    const pct = Math.round(c / n * 100);
+    return `<div class="inv-row">
+      <span class="inv-row-tag"><span class="tag ${isInStore(s) ? 'instock' : 'other'}">${esc(s)}</span></span>
+      <span class="inv-row-bar"><span style="width:${pct}%"></span></span>
+      <span class="inv-row-num">${c.toLocaleString()}</span>
+    </div>`;
+  }).join('');
   el.innerHTML = `
-    <p class="inv-loaded">${ic('check','ok')} נטענו <b>${n.toLocaleString()}</b> פאות.</p>
-    <div class="scroll"><table><thead><tr><th>סטטוס</th><th>כמות</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    <div class="inv-hero">
+      <div class="inv-total">${n.toLocaleString()}</div>
+      <div class="inv-total-lbl">פאות במלאי · <b>${inStore.toLocaleString()}</b> אמורות בחנות</div>
+    </div>
+    <div class="inv-list">${rows}</div>`;
 }
 
 /* =====================================================================
@@ -1147,41 +1207,46 @@ function downloadXlsx(filename, sheets) {
 }
 
 /* ---------- Export actions ---------- */
-function exportFull() { download(stamp() + '_reconciliation.csv', toCSV(dataReconciliation())); }
-function exportUpdates() { download(stamp() + '_status_updates.csv', toCSV(dataUpdates())); }
-function exportScans() { download(stamp() + '_raw_scans.csv', toCSV(dataScans())); }
+// Each report as an {icon, title, rows} builder — used for the single "export
+// all" workbook, the per-category export, and the in-app preview.
+const EXPORT_SHEETS = {
+  recon:    { icon: 'file',    title: 'דוח התאמה',     build: dataReconciliation },
+  updates:  { icon: 'edit',    title: 'עדכוני סטטוס',  build: dataUpdates },
+  stations: { icon: 'users',   title: 'פילוח לפי עמדה', build: dataStations },
+  scans:    { icon: 'archive', title: 'סריקות גולמיות', build: dataScans }
+};
+const EXPORT_ORDER = ['recon', 'updates', 'stations', 'scans'];
 
 // One Excel workbook with every report as its own tab.
 function exportExcel() {
-  downloadXlsx(stamp() + '_report.xlsx', [
-    { name: 'דוח התאמה', rows: dataReconciliation() },
-    { name: 'עדכוני סטטוס', rows: dataUpdates() },
-    { name: 'סריקות גולמיות', rows: dataScans() },
-    { name: 'לפי עמדה', rows: dataStations() }
-  ]);
+  downloadXlsx(stamp() + '_report.xlsx',
+    EXPORT_ORDER.map(k => ({ name: EXPORT_SHEETS[k].title, rows: EXPORT_SHEETS[k].build() })));
+}
+// Export a single category as its own one-tab workbook.
+function exportOne(key) {
+  const s = EXPORT_SHEETS[key];
+  if (!s) return;
+  downloadXlsx(stamp() + '_' + key + '.xlsx', [{ name: s.title, rows: s.build() }]);
 }
 
-// Render every report as a formatted, collapsible preview inside the app.
+// In-app preview: one closed accordion per report, each with its own export.
 function renderExportPreview() {
   const el = $('#exportPreview');
   if (!el) return;
-  if (!Object.keys(state.inventory).length) {
-    el.innerHTML = '<div class="card"><p class="muted small">טעני מלאי כדי לראות תצוגה מקדימה של הדוחות.</p></div>';
-    return;
-  }
+  if (!Object.keys(state.inventory).length) { el.innerHTML = ''; return; }
   const tbl = (rows) => {
     if (rows.length < 2) return '<p class="muted small">אין נתונים.</p>';
     const head = rows[0].map(h => `<th>${esc(h)}</th>`).join('');
     const body = rows.slice(1, 401).map(r => '<tr>' + r.map(c => `<td>${esc(c)}</td>`).join('') + '</tr>').join('');
-    const more = rows.length > 401 ? `<p class="muted small">מוצגות 400 מתוך ${(rows.length - 1).toLocaleString()}. ההורדה כוללת הכל.</p>` : '';
+    const more = rows.length > 401 ? `<p class="muted small">מוצגות 400 מתוך ${(rows.length - 1).toLocaleString()}.</p>` : '';
     return `<div class="scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
   };
-  const recon = dataReconciliation(), upd = dataUpdates(), raw = dataScans(), st = dataStations();
-  el.innerHTML =
-    accCard(ic('file') + ' דוח התאמה מלא', (recon.length - 1).toLocaleString(), 'כל פאה עם הקטגוריה שלה', tbl(recon), true) +
-    accCard(ic('edit') + ' עדכוני סטטוס מוצעים', (upd.length - 1).toLocaleString(), 'התיקונים להחזרה לשיטס', tbl(upd)) +
-    accCard(ic('users') + ' פילוח לפי עמדה', (st.length - 1).toLocaleString(), 'כמה סרקה כל עמדה', tbl(st)) +
-    accCard(ic('archive') + ' סריקות גולמיות', (raw.length - 1).toLocaleString(), 'גיבוי / מיזוג', tbl(raw));
+  el.innerHTML = EXPORT_ORDER.map(key => {
+    const s = EXPORT_SHEETS[key];
+    const rows = s.build();
+    const body = `<button class="btn secondary small-btn cat-export" data-export-cat="${key}">${ic('download')} ייצוא קטגוריה זו</button>` + tbl(rows);
+    return accCard(ic(s.icon) + ' ' + s.title, (rows.length - 1).toLocaleString(), '', body, false);
+  }).join('');
 }
 
 /* Merge another device's raw-scans CSV into this one (for multi-worker counts). */
@@ -1445,6 +1510,7 @@ function showTab(name) {
 
 function init() {
   load();
+  applyTheme();
 
   // paint all static [data-ic] placeholders from the one icon set
   $$('[data-ic]').forEach(el => { el.innerHTML = ic(el.getAttribute('data-ic')); });
@@ -1543,6 +1609,9 @@ function init() {
     // per-item quick undo in the batch list
     const bu = e.target.closest('[data-undo-code]');
     if (bu) { unrecordScan(bu.getAttribute('data-undo-code')); return; }
+    // per-category export button
+    const exp = e.target.closest('[data-export-cat]');
+    if (exp) { e.stopPropagation(); exportOne(exp.getAttribute('data-export-cat')); return; }
     // report refresh button
     if (e.target.closest('[data-report-refresh]')) { if (cloudEnabled()) pullCloud(); renderReport(); return; }
     // clickable dashboard stat → open + scroll to its category
@@ -1575,19 +1644,8 @@ function init() {
     const t = $('#invPaste').value.trim();
     if (t) handleImport(t);
   });
-  // "load from Google Sheets" shortcut → open Settings and expand the sheet section
   const goSheet = $('#goSheetSettings');
-  if (goSheet) goSheet.addEventListener('click', () => {
-    navigate('settings');
-    setTimeout(() => {
-      const heads = $$('#panel-settings .acc-head');
-      const sheetAcc = heads.find(h => /גוגל שיטס/.test(h.textContent));
-      if (sheetAcc && sheetAcc.parentElement) {
-        sheetAcc.parentElement.classList.add('open');
-        sheetAcc.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    }, 60);
-  });
+  if (goSheet) goSheet.addEventListener('click', openSheetSettings);
 
   // load inventory from a shared Google Sheets link (via the Worker proxy)
   const sheetEl = $('#sheetUrl');
@@ -1662,18 +1720,19 @@ function init() {
   }
 
   // export
-  $('#expFull').addEventListener('click', exportFull);
-  $('#expUpdates').addEventListener('click', exportUpdates);
-  $('#expScans').addEventListener('click', exportScans);
   const expExcel = $('#expExcel');
   if (expExcel) expExcel.addEventListener('click', exportExcel);
-  $('#mergeFile').addEventListener('change', (e) => {
+  const mergeFile = $('#mergeFile');
+  if (mergeFile) mergeFile.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => { alert('מוזגו ' + mergeScans(reader.result) + ' סריקות.'); renderExportPreview(); };
     reader.readAsText(file, 'UTF-8');
   });
+
+  // appearance / brand theme
+  setupTheme();
 
   renderVersions();
   renderInventoryStatus();
@@ -1686,6 +1745,27 @@ function init() {
   const start = 'scan';
   history.replaceState({ tab: start }, '');
   showTab(start);
+}
+
+// Appearance settings: accent swatches (global) + dark toggle.
+function setupTheme() {
+  renderTheme();
+  const darkEl = $('#darkToggle');
+  if (darkEl) {
+    darkEl.checked = !!state.dark;
+    darkEl.addEventListener('change', () => { state.dark = darkEl.checked; save(); applyTheme(); });
+  }
+}
+function renderTheme() {
+  const wrap = $('#accentSwatches');
+  if (!wrap) return;
+  const cur = accentKey();
+  wrap.innerHTML = Object.entries(ACCENTS).map(([k, a]) =>
+    `<button class="swatch${k === cur ? ' active' : ''}" data-accent="${k}" title="${esc(a.name)}" style="--sw:${a.v}"><span></span></button>`
+  ).join('');
+  wrap.querySelectorAll('[data-accent]').forEach(b => b.addEventListener('click', () => {
+    state.accent = b.getAttribute('data-accent'); save(); applyTheme(); renderTheme();
+  }));
 }
 
 function renderVersions() {
