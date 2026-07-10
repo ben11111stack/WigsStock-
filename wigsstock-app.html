@@ -615,8 +615,9 @@ const KNOWN_STATUSES = [
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.5.1';
+const APP_VERSION = '1.5.2';
 const CHANGELOG = [
+  { v: '1.5.2', notes: ['תיקון הפלאש בטלפונים עם כמה עדשות — מחפש אוטומטית את העדשה עם הפנס ומדליק אותה', 'מצב הפלאש נקרא מהחומרה (לא "דולק" כשאין אור)'] },
   { v: '1.5.1', notes: ['פתיחת מצלמה עמידה יותר — ניסיון חוזר עם הגדרות פשוטות כשהמצלמה תפוסה', 'הודעות שגיאה ברורות למצלמה (תפוסה / אין הרשאה / אין מצלמה)'] },
   { v: '1.5.0', notes: ['הגדרות ודוחות מסודרים באקורדיונים (מתקפלים)', 'שם הספירה הוסתר (בהגדרות מתקדמות)'] },
   { v: '1.4.1', notes: ['תיקון כפתור הפלאש — מוצג כשהמצלמה פועלת ומנסה להדליק בכל מכשיר שתומך'] },
@@ -916,6 +917,7 @@ async function startCamera() {
 
   try {
     cameraStream = await getCameraStream();
+    torchOn = false; torchProbed = false;
     video.srcObject = cameraStream;
     video.setAttribute('playsinline', 'true');
     await video.play();
@@ -999,32 +1001,122 @@ function stopCamera() {
   const v = $('#video'); if (v) { try { v.srcObject = null; } catch (e) {} }
   $('#cameraBtn').textContent = '📷';
   const s = $('#camStart'); if (s) s.classList.remove('hidden');
-  torchOn = false;
+  torchOn = false; torchProbed = false;
   const fb = $('#flashBtn'); if (fb) { fb.classList.add('hidden'); fb.classList.remove('active'); }
 }
 
-// Camera flash / torch. Don't pre-judge support via getCapabilities (flaky
-// and hid the button on Android where it works) — just show it while the
-// camera is on and try to toggle on tap; only hide if the device rejects it.
-let torchOn = false;
+/* Camera flash / torch.
+ * The flash LED is wired only to the main rear sensor. On multi-lens phones
+ * (Xiaomi/MIUI etc. expose 3-4 rear lenses) getUserMedia may hand back an
+ * ultra-wide / macro / depth lens that has no LED, so getCapabilities().torch
+ * is false even though the phone has a flash. So: don't judge support up front
+ * — show the button while the camera is on; on tap, if the current lens has no
+ * torch, enumerate the cameras and switch to the first rear lens that exposes
+ * one. Probe at most once per session (torchProbed). */
+let torchOn = false, torchProbed = false;
 function torchTrack() { return cameraStream && cameraStream.getVideoTracks ? cameraStream.getVideoTracks()[0] : null; }
+function torchOnTrack(track) {
+  try { const c = track && track.getCapabilities && track.getCapabilities(); return !!(c && c.torch); }
+  catch (e) { return false; }
+}
+// The torch capability is sometimes reported a beat after the stream comes up.
+function settleTorch(track) {
+  if (torchOnTrack(track)) return Promise.resolve(true);
+  return new Promise(res => setTimeout(() => res(torchOnTrack(track)), 260));
+}
+// Prefer the main rear sensor; push selfie and wide/tele/macro/depth lenses down.
+function rearScore(label) {
+  label = (label || '').toLowerCase(); let s = 0;
+  if (/back|rear|environment|world/.test(label)) s += 10;
+  if (/front|user|selfie|face/.test(label)) s -= 20;
+  if (/(^|\D)0(\D|$)/.test(label)) s += 3;                       // "camera2 0, facing back" = main sensor
+  if (/wide|ultra|tele|macro|depth|mono|bokeh/.test(label)) s -= 2;
+  return s;
+}
 function updateFlashButton() {
   const btn = $('#flashBtn'); if (!btn) return;
   if (cameraOn) btn.classList.remove('hidden');
-  else { btn.classList.add('hidden'); btn.classList.remove('active'); torchOn = false; }
+  else { btn.classList.add('hidden'); btn.classList.remove('active'); torchOn = false; torchProbed = false; }
 }
+
+// Point #video at a new stream without stopping the decode loop — scanTick reads
+// frames off the <video>/canvas, so swapping the stream underneath keeps decoding.
+async function bindScanStream(stream) {
+  cameraStream = stream;
+  const video = $('#video');
+  video.srcObject = stream;
+  video.setAttribute('playsinline', 'true');
+  try { await video.play(); } catch (e) {}
+}
+
+// applyConstraints resolves even when the light didn't actually come on, so we
+// read the real state back from getSettings().torch.
+async function applyTorch(want) {
+  const track = torchTrack(); if (!track) return false;
+  await track.applyConstraints({ advanced: [{ torch: want }] });
+  let on = want;
+  try { const st = track.getSettings ? track.getSettings() : {}; if ('torch' in st) on = !!st.torch; } catch (e) {}
+  torchOn = on;
+  const btn = $('#flashBtn'); if (btn) btn.classList.toggle('active', on);
+  return on;
+}
+
 async function toggleTorch() {
-  const track = torchTrack(); if (!track) return;
   const btn = $('#flashBtn'), note = $('#cameraNote');
+  const track = torchTrack(); if (!track) return;
+  if (note) note.textContent = '';
   try {
-    torchOn = !torchOn;
-    await track.applyConstraints({ advanced: [{ torch: torchOn }] });
-    btn.classList.toggle('active', torchOn);
-    if (note) note.textContent = '';
+    if (torchOn) { await applyTorch(false); return; }                 // turn off
+    if (torchOnTrack(track)) { await applyTorch(true); return; }      // current lens has torch
+    // Current lens exposes no torch — search the other lenses (once).
+    if (torchProbed) { if (note) note.textContent = 'הפלאש לא נתמך במצלמה של המכשיר הזה'; return; }
+    if (note) note.textContent = 'מחפש עדשה עם פנס…';
+    const found = await findTorchCamera();
+    if (note) note.textContent = found ? '' : 'הפלאש לא נתמך במצלמה של המכשיר הזה';
   } catch (e) {
-    torchOn = false; btn.classList.remove('active');
+    torchOn = false; if (btn) btn.classList.remove('active');
     if (note) note.textContent = 'הפלאש לא נתמך במצלמה/דפדפן הזה';
   }
+}
+
+// Enumerate rear cameras and switch to the first that actually exposes a torch.
+async function findTorchCamera() {
+  torchProbed = true;
+  let curId = '';
+  try { curId = (torchTrack().getSettings() || {}).deviceId || ''; } catch (e) {}
+  let devs = [];
+  try { devs = await navigator.mediaDevices.enumerateDevices(); } catch (e) { return false; }
+  const cands = devs.filter(d => d.kind === 'videoinput' && d.deviceId && d.deviceId !== curId)
+                    .sort((a, b) => rearScore(b.label) - rearScore(a.label));
+  // Most phones allow only one active rear camera at a time — free the current one.
+  if (cameraStream) cameraStream.getTracks().forEach(t => t.stop());
+  for (const d of cands) {
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: d.deviceId } } }); }
+    catch (e) { continue; }
+    const track = stream.getVideoTracks()[0];
+    if (await settleTorch(track)) {                 // found a lens with a flash
+      await bindScanStream(stream);
+      await applyTorch(true);
+      return true;
+    }
+    stream.getTracks().forEach(t => t.stop());
+  }
+  // No lens exposed a torch — reopen a camera so scanning keeps working.
+  await reopenScanCamera(curId);
+  return false;
+}
+
+// Reopen a camera (the original lens if known) after a failed torch probe.
+async function reopenScanCamera(deviceId) {
+  const want = deviceId ? { video: { deviceId: { exact: deviceId } } }
+                        : { video: { facingMode: { ideal: 'environment' } } };
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia(want); }
+  catch (e) {
+    try { stream = await getCameraStream(); } catch (e2) { return; }
+  }
+  await bindScanStream(stream);
 }
 
 /* =====================================================================
