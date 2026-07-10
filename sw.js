@@ -1,5 +1,5 @@
 /* WigsStock service worker – offline shell, network-first so updates land */
-const CACHE = 'wigsstock-v2';
+const CACHE = 'wigsstock-v3';
 const ASSETS = [
   './',
   './index.html',

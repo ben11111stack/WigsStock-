@@ -56,10 +56,8 @@ b, strong { font-weight: 600; }
   border-bottom: 1px solid color-mix(in oklab, var(--line) 54%, transparent);
 }
 .hdr-logo {
-  width: 38px; height: 38px; border-radius: 11px;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--primary-weak); color: var(--primary); font-size: 20px;
-  flex: none;
+  width: 38px; height: 38px; border-radius: 11px; flex: none;
+  object-fit: cover; background: #fff; border: 1px solid var(--line);
 }
 .hdr-title { display: flex; flex-direction: column; min-width: 0; }
 .hdr-title b { font-size: 21px; font-weight: 620; letter-spacing: -.02em; line-height: 1; }
