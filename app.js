@@ -23,8 +23,9 @@ const KNOWN_STATUSES = [
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.4.1';
 const CHANGELOG = [
+  { v: '1.4.1', notes: ['תיקון כפתור הפלאש — מוצג כשהמצלמה פועלת ומנסה להדליק בכל מכשיר שתומך'] },
   { v: '1.4.0', notes: ['לוגו ומיתוג WigsStock', 'כפתור פלאש (פנס) למצלמה', 'שדה הקלדה גלוי תמיד + כפתור "רשום" בשורה', 'התראת עדכון כשיש גרסה חדשה', 'רשימת גרסאות בהגדרות'] },
   { v: '1.3.0', notes: ['טאב הגדרות מרוכז', 'שם עמדה חובה לפני סריקה', 'הדוח מציג מי סרק כל פאה', 'מחיקה/תיקון סריקה שגויה', 'סנכרון מהיר (~4ש\') בין עמדות'] },
   { v: '1.2.0', notes: ['כתיבה אוטומטית לשיטס — נסרק/תאריך/עמדה', 'טעינת מלאי מקישור גוגל שיטס', 'סנכרון מלאי אוטומטי לכל העמדות'] },
@@ -379,23 +380,28 @@ function stopCamera() {
   const fb = $('#flashBtn'); if (fb) { fb.classList.add('hidden'); fb.classList.remove('active'); }
 }
 
-// Camera flash / torch (Android Chrome; iOS Safari has no torch API).
+// Camera flash / torch. Don't pre-judge support via getCapabilities (flaky
+// and hid the button on Android where it works) — just show it while the
+// camera is on and try to toggle on tap; only hide if the device rejects it.
 let torchOn = false;
 function torchTrack() { return cameraStream && cameraStream.getVideoTracks ? cameraStream.getVideoTracks()[0] : null; }
 function updateFlashButton() {
   const btn = $('#flashBtn'); if (!btn) return;
-  const track = torchTrack();
-  const caps = track && track.getCapabilities ? track.getCapabilities() : {};
-  if (cameraOn && caps && caps.torch) btn.classList.remove('hidden');
-  else { btn.classList.add('hidden'); torchOn = false; btn.classList.remove('active'); }
+  if (cameraOn) btn.classList.remove('hidden');
+  else { btn.classList.add('hidden'); btn.classList.remove('active'); torchOn = false; }
 }
 async function toggleTorch() {
   const track = torchTrack(); if (!track) return;
+  const btn = $('#flashBtn'), note = $('#cameraNote');
   try {
     torchOn = !torchOn;
     await track.applyConstraints({ advanced: [{ torch: torchOn }] });
-    $('#flashBtn').classList.toggle('active', torchOn);
-  } catch (e) { torchOn = false; $('#flashBtn').classList.remove('active'); }
+    btn.classList.toggle('active', torchOn);
+    if (note) note.textContent = '';
+  } catch (e) {
+    torchOn = false; btn.classList.remove('active');
+    if (note) note.textContent = 'הפלאש לא נתמך במצלמה/דפדפן הזה';
+  }
 }
 
 /* =====================================================================
