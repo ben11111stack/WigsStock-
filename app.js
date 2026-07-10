@@ -23,8 +23,12 @@ const KNOWN_STATUSES = [
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 const CHANGELOG = [
+  { v: '1.6.1', notes: [
+    'כפתור סריקה (📷) בשדה החיפוש שבדוח — סורקים פאה ורואים מיד את הסטטוס שלה (בלי לרשום סריקה)',
+    'כרטיס סטטוס לפאה בודדת: תקין / חסרה / מסומנת אחרת / לא מוכרת, כולל העמדה שסרקה'
+  ] },
   { v: '1.6.0', notes: [
     'חיפוש חי בדוח — מקלידים ברקוד ורואים מיד באיזו קטגוריה הוא',
     'לחיצה על ריבוע בדאשבורד פותחת וקופצת ישר לנתונים שלו',
@@ -745,6 +749,106 @@ function stationBreakdown() {
   return `<div class="scroll"><table><thead><tr><th>עמדה / עובדת</th><th>פאות שנסרקו</th><th>חלק</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
+/* ---------- Lookup scanner (report tab) ----------
+ * A lightweight camera overlay that scans ONE barcode into the search box to
+ * check a wig's status — it does NOT record a scan. Reuses makeReader() and
+ * getCameraStream() but keeps its own stream/timer so it never clashes with
+ * the main scan-tab camera (which only runs on the scan tab). */
+let lookupStream = null, lookupTimer = null, lookupReader = null, lookupCanvas = null, lookupCtx = null, lookupOn = false;
+
+async function openLookupScan() {
+  if (lookupOn) return;
+  const overlay = $('#scanOverlay');
+  if (!isSecureContextForCamera()) { alert('למצלמה צריך כתובת מאובטחת (https). אפשר גם להקליד את הברקוד ידנית בשדה החיפוש.'); return; }
+  if (!window.ZXing || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { alert('הדפדפן לא תומך במצלמה. הקלידי את הברקוד בשדה החיפוש.'); return; }
+  overlay.classList.remove('hidden');
+  $('#overlayNote').textContent = 'פותח מצלמה…';
+  const video = $('#overlayVideo');
+  try {
+    lookupStream = await getCameraStream();
+    video.srcObject = lookupStream;
+    video.setAttribute('playsinline', 'true');
+    await video.play();
+    lookupReader = makeReader();
+    lookupCanvas = document.createElement('canvas');
+    lookupCtx = lookupCanvas.getContext('2d', { willReadFrequently: true });
+    lookupOn = true;
+    $('#overlayNote').textContent = 'כוונו ברקוד למסגרת';
+    lookupTick();
+  } catch (e) {
+    $('#overlayNote').textContent = cameraErrorMessage(e);
+  }
+}
+
+function lookupTick() {
+  if (!lookupOn) return;
+  const video = $('#overlayVideo');
+  try {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (video.readyState >= 2 && vw && vh) {
+      const scale = Math.min(1, 1280 / vw);
+      const cw = Math.round(vw * scale), ch = Math.round(vh * scale);
+      if (lookupCanvas.width !== cw) { lookupCanvas.width = cw; lookupCanvas.height = ch; }
+      lookupCtx.drawImage(video, 0, 0, cw, ch);
+      const src = new ZXing.HTMLCanvasElementLuminanceSource(lookupCanvas);
+      const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(src));
+      try {
+        const res = lookupReader.decodeBitmap(bmp);
+        if (res) { onLookupHit(res.getText()); return; }
+      } catch (e) { /* no barcode this frame */ }
+    }
+  } catch (e) { /* frame not ready */ }
+  lookupTimer = setTimeout(lookupTick, 90);
+}
+
+function onLookupHit(code) {
+  const bc = normBarcode(code);
+  closeLookupScan();
+  beep('ok');
+  if (navigator.vibrate) navigator.vibrate(40);
+  reportQuery = bc;
+  renderReport();   // re-renders with the lookup status card + filter
+}
+
+function closeLookupScan() {
+  lookupOn = false;
+  if (lookupTimer) { clearTimeout(lookupTimer); lookupTimer = null; }
+  if (lookupReader) { try { lookupReader.reset(); } catch (e) {} lookupReader = null; }
+  if (lookupStream) { lookupStream.getTracks().forEach(t => t.stop()); lookupStream = null; }
+  const v = $('#overlayVideo'); if (v) { try { v.srcObject = null; } catch (e) {} }
+  const o = $('#scanOverlay'); if (o) o.classList.add('hidden');
+}
+
+// Status readout for one specific wig — shown when the search query exactly
+// identifies a barcode (typed or scanned via the search's camera button).
+function lookupCard(query) {
+  const bc = normBarcode(query || '');
+  if (!bc) return '';
+  const inInv = bc in state.inventory;
+  const scans = effectiveScans();
+  const scanned = bc in scans ? scans[bc].count : 0;
+  if (!inInv && !scanned) {
+    return `<div class="lookup none"><div class="lookup-bc">🔎 ${esc(bc)}</div>` +
+      `<div class="lookup-line">לא נמצאה — לא בקובץ המלאי וגם לא נסרקה.</div></div>`;
+  }
+  const status = inInv ? state.inventory[bc] : null;
+  let cls, verdict;
+  if (!inInv) { cls = 'unknown'; verdict = '❓ ברקוד לא מוכר — נסרק אך לא קיים בקובץ'; }
+  else if (isInStore(status) && scanned) { cls = 'ok'; verdict = '✅ תקין — במלאי ונסרקה'; }
+  else if (isInStore(status) && !scanned) { cls = 'bad'; verdict = '❌ חסרה — אמורה בחנות אך לא נסרקה'; }
+  else if (!isInStore(status) && scanned) { cls = 'warn'; verdict = '⚠️ בחנות אך מסומנת אחרת — צריך להחזיר ל-in-stock'; }
+  else { cls = 'muted'; verdict = 'רשומה בשיטס, לא אמורה להיות בחנות ולא נסרקה'; }
+  const d = state.cloudDetail && state.cloudDetail[bc];
+  const station = d && d.station ? `<div class="lookup-line">עמדה: <b>${esc(d.station)}</b></div>` : '';
+  return `<div class="lookup ${cls}">
+    <div class="lookup-bc">🔎 ${esc(bc)}</div>
+    <div class="lookup-verdict">${verdict}</div>
+    <div class="lookup-line">סטטוס בשיטס: <b>${inInv ? esc(status) : '—'}</b></div>
+    <div class="lookup-line">נסרקה: <b>${scanned ? ('כן · ' + scanned + ' פעמים') : 'לא'}</b></div>
+    ${station}
+  </div>`;
+}
+
 function renderReport() {
   const r = reconcile();
   const el = $('#reportBody');
@@ -794,9 +898,11 @@ function renderReport() {
       </div>
       <p class="muted small" style="margin-top:10px">צפוי בחנות (in-stock+consignment): <b>${expected.toLocaleString()}</b> · כפילויות: <b>${r.duplicates.length}</b> · הקישי על ריבוע לקפיצה לנתונים שלו</p>
       <div class="search-row">
-        <input id="reportSearch" class="search-input" inputmode="search" autocomplete="off" placeholder="🔎 חיפוש ברקוד בכל הקטגוריות" value="${esc(reportQuery)}">
+        <input id="reportSearch" class="search-input" inputmode="search" autocomplete="off" placeholder="🔎 חיפוש / בדיקת סטטוס של פאה" value="${esc(reportQuery)}">
+        <button id="reportScanBtn" class="icon-btn" title="סרוק ברקוד לבדיקת סטטוס">📷</button>
         ${q ? `<span class="muted small">נמצאו: ${(fOther.length + fMissing.length + fUnknown.length + fOk.length).toLocaleString()}</span>` : ''}
       </div>
+      ${lookupCard(reportQuery)}
     </div>
 
     <div id="acc-other">${accCard('⚠️ בחנות אך מסומן אחרת', r.foundOther.length,
@@ -829,6 +935,8 @@ function renderReport() {
     search.oninput = () => { reportQuery = search.value; renderReport(); };
     if (q) { const pos = search.value.length; search.focus(); try { search.setSelectionRange(pos, pos); } catch (e) {} }
   }
+  const scanBtn = $('#reportScanBtn');
+  if (scanBtn) scanBtn.onclick = openLookupScan;
 }
 
 function renderInventoryStatus() {
@@ -1273,6 +1381,7 @@ function showTab(name) {
   $$('.tab').forEach(t => t.classList.toggle('active', t.id === 'panel-' + name));
   $$('nav button').forEach(b => b.classList.toggle('active', b.id === 'tab-' + name));
   if (wasScan && name !== 'scan') stopCamera();       // free the camera when leaving
+  if (name !== 'report') closeLookupScan();           // free the lookup camera when leaving the report
   if (name === 'report') { renderReport(); if (cloudEnabled()) pullCloud(); }   // refresh across stations
   if (name === 'export') renderExportPreview();
   if (name === 'scan') {
@@ -1351,12 +1460,13 @@ function init() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       if (cameraOn) { cameraResumeOnVisible = true; stopCamera(); }
+      closeLookupScan();   // never keep the lookup camera busy in the background
     } else if (cameraResumeOnVisible) {
       cameraResumeOnVisible = false;
       if (document.querySelector('#panel-scan.active')) ensureCamera();
     }
   });
-  window.addEventListener('pagehide', () => { if (cameraOn) stopCamera(); });
+  window.addEventListener('pagehide', () => { if (cameraOn) stopCamera(); closeLookupScan(); });
 
   // tabs (each switch pushes history so the back button walks tabs, not out of the app)
   $$('nav button').forEach(b => b.addEventListener('click', () => navigate(b.id.replace('tab-', ''))));
@@ -1487,6 +1597,14 @@ function init() {
   const batchClear = $('#batchClear');
   if (batchClear) batchClear.addEventListener('click', () => { state.sessionLog = []; save(); renderSessionLog(); });
   updateUndoRedo();
+
+  // lookup-scan overlay (report tab): close button + tap-outside to dismiss
+  const scanOverlay = $('#scanOverlay');
+  if (scanOverlay) {
+    const closeBtn = $('#scanOverlayClose');
+    if (closeBtn) closeBtn.addEventListener('click', closeLookupScan);
+    scanOverlay.addEventListener('click', (e) => { if (e.target === scanOverlay) closeLookupScan(); });
+  }
 
   // export
   $('#expFull').addEventListener('click', exportFull);

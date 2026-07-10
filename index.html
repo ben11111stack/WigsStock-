@@ -263,6 +263,21 @@
 
   </main>
 
+  <!-- lookup-scan overlay (report tab): scan a barcode to check a wig's status -->
+  <div id="scanOverlay" class="scan-overlay hidden">
+    <div class="scan-overlay-inner">
+      <div class="scan-overlay-head">
+        <span>סרקי ברקוד לבדיקת סטטוס</span>
+        <button id="scanOverlayClose" class="icon-btn" title="סגור">✕</button>
+      </div>
+      <div class="overlay-reader">
+        <video id="overlayVideo" playsinline muted autoplay></video>
+        <div class="scan-frame"></div>
+      </div>
+      <p id="overlayNote" class="small muted center"></p>
+    </div>
+  </div>
+
   <nav class="bottomnav">
     <button id="tab-load">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
