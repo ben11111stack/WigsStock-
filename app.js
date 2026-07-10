@@ -23,8 +23,9 @@ const KNOWN_STATUSES = [
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.5.1';
 const CHANGELOG = [
+  { v: '1.5.1', notes: ['פתיחת מצלמה עמידה יותר — ניסיון חוזר עם הגדרות פשוטות כשהמצלמה תפוסה', 'הודעות שגיאה ברורות למצלמה (תפוסה / אין הרשאה / אין מצלמה)'] },
   { v: '1.5.0', notes: ['הגדרות ודוחות מסודרים באקורדיונים (מתקפלים)', 'שם הספירה הוסתר (בהגדרות מתקדמות)'] },
   { v: '1.4.1', notes: ['תיקון כפתור הפלאש — מוצג כשהמצלמה פועלת ומנסה להדליק בכל מכשיר שתומך'] },
   { v: '1.4.0', notes: ['לוגו ומיתוג WigsStock', 'כפתור פלאש (פנס) למצלמה', 'שדה הקלדה גלוי תמיד + כפתור "רשום" בשורה', 'התראת עדכון כשיש גרסה חדשה', 'רשימת גרסאות בהגדרות'] },
@@ -322,9 +323,7 @@ async function startCamera() {
   setBannerLive();   // show immediately so it never looks stuck on "opening…"
 
   try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
-    });
+    cameraStream = await getCameraStream();
     video.srcObject = cameraStream;
     video.setAttribute('playsinline', 'true');
     await video.play();
@@ -336,9 +335,40 @@ async function startCamera() {
   } catch (e) {
     cameraOn = false;
     btn.textContent = '📷';
-    const denied = /denied|permission|NotAllowed/i.test(e.name + ' ' + (e.message || ''));
-    showCamStart(denied ? 'הקש/י על הכפתור כדי לאשר מצלמה 📷' : 'לא ניתן לגשת למצלמה: ' + (e.message || e));
+    showCamStart(cameraErrorMessage(e));
   }
+}
+
+/* Open the rear camera, degrading gracefully. "Could not start video source"
+ * (NotReadableError) is almost always the camera being held by another app or
+ * browser tab / an installed PWA instance — retrying with plainer constraints
+ * often succeeds. We stop early on a real permission denial. */
+async function getCameraStream() {
+  const attempts = [
+    { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } },
+    { video: { facingMode: { ideal: 'environment' } } },
+    { video: true },
+  ];
+  let lastErr;
+  for (const c of attempts) {
+    try { return await navigator.mediaDevices.getUserMedia(c); }
+    catch (e) {
+      lastErr = e;
+      if (/NotAllowed|denied|permission/i.test(e.name + ' ' + (e.message || ''))) throw e;
+    }
+  }
+  throw lastErr;
+}
+
+// Turn a getUserMedia failure into actionable Hebrew guidance.
+function cameraErrorMessage(e) {
+  const s = (e && (e.name + ' ' + (e.message || ''))) || '';
+  if (/NotAllowed|denied|permission/i.test(s)) return 'הקש/י על הכפתור כדי לאשר מצלמה 📷';
+  if (/NotReadable|Could not start|in use|busy|track ?start/i.test(s))
+    return 'המצלמה תפוסה — סגרי אפליקציות/טאבים אחרים שמשתמשים במצלמה (כולל האפליקציה המותקנת), ונסי שוב. בינתיים: סורק חיצוני או הקלדה.';
+  if (/NotFound|Overconstrained|Requested device/i.test(s))
+    return 'לא נמצאה מצלמה מתאימה במכשיר. השתמשי בסורק חיצוני או בהקלדה.';
+  return 'לא ניתן לגשת למצלמה: ' + ((e && (e.message || e.name)) || e);
 }
 
 /* Grab the current video frame and try to decode it. TRY_HARDER handles

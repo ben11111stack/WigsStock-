@@ -1,7 +1,14 @@
 # WigsStock · Handoff (למפתח/סשן הבא)
 
 אפליקציית **ספירת מלאי פאות** עם סריקת ברקוד, סנכרון ענן בין עמדות, וקריאה/כתיבה מול Google Sheets.
-המסמך הזה מסכם את כל מה שצריך כדי להמשיך. **סטטוס: פרודוקשן, גרסה 1.4.0. הכל committed + pushed.**
+המסמך הזה מסכם את כל מה שצריך כדי להמשיך. **סטטוס: פרודוקשן, גרסה 1.5.1.**
+
+## ⛔ תקלה פעילה (10/07/2026) — ה-Worker בענן לא זמין
+כל תכונות הענן שבורות כרגע: **טעינה מהשיטס, כתיבה לשיטס, וגם סנכרון בין עמדות** — כולן מחזירות בדפדפן `Failed to fetch`.
+- **אבחון:** הכתובת `https://wigsstock-sync.benzi-naor.workers.dev` כבר **לא מריצה את worker ה-API**. השורש (`/`) מחזיר את ה-HTML של האפליקציה, וכל `/api/*` מחזיר `404` בלי כותרות CORS → הדפדפן זורק `Failed to fetch` (ולכן זו לא שגיאת "404" רגילה). כנראה נפרס מעל אותו שם `wigsstock-sync` משהו שמגיש קבצים סטטיים, שדרס את worker הסנכרון.
+- **תיקון:** לפרוס מחדש את ה-worker הנכון (`worker/src/worker.js`, ה-`wrangler.toml` בריפו כבר תקין) — מ-`worker/`: `export CLOUDFLARE_API_TOKEN=<token>; export CLOUDFLARE_ACCOUNT_ID=7c5259865ad06b1a05dbff3e55d53027; npx wrangler@3 deploy`. **דורש את ה-Cloudflare API Token מהמשתמש** (לא נשמר בריפו). אחרי הפריסה: `curl https://wigsstock-sync.benzi-naor.workers.dev/api/health` אמור להחזיר `{"ok":true,"service":"wigsstock-sync"}`.
+
+**הכל committed + pushed.**
 
 ## קישורים
 - **אפליקציה חיה:** https://ben11111stack.github.io/WigsStock-/ (GitHub Pages)
