@@ -1,7 +1,18 @@
 # WigsStock · Handoff (למפתח/סשן הבא)
 
 אפליקציית **ספירת מלאי פאות** עם סריקת ברקוד, סנכרון ענן בין עמדות, וקריאה/כתיבה מול Google Sheets.
-המסמך הזה מסכם את כל מה שצריך כדי להמשיך. **סטטוס: פרודוקשן, גרסה 1.6.0.**
+המסמך הזה מסכם את כל מה שצריך כדי להמשיך. **סטטוס: פרודוקשן, גרסה 1.10.0.**
+
+## 🆕 מה חדש ב-1.10.0 (הסשן האחרון — ענף `claude/endauf-continuation-thpuvg`)
+- **מודל סטטוסים ניתן לעריכה** (`DEFAULT_STATUSES`, `statusVocab()`, `statusMeta`, `statusLabel`, `isInStore`): לכל סטטוס יש תווית עברית ודגל `inStore` (האם נספר במלאי). ניהול בהגדרות → **סטטוסים** (`renderStatusManager`): שינוי תווית, סימון "בחנות", הוספה/מחיקה, איפוס. סטטוסים חדשים מהשיטס נוספים אוטומטית (`ensureStatus`).
+- **סטטוס ניתן לשינוי מכרטיס הפאה** — `state.statusOverrides` (barcode→status), שכבת override מקומית מעל המלאי. `statusOf()` / `effInv()` מחזירים את הסטטוס האפקטיבי; `reconcile()` משתמש ב-`effInv()`. ⚠️ **ה-override מקומי בלבד** — לא נכתב חזרה לשיטס (הכתיבה כותבת רק נסרק/תאריך/עמדה). אם רוצים שסטטוס יסונכרן — צריך להרחיב את ה-Apps Script + Worker.
+- **שם לכל פאה** — `state.names` (עריכה מקומית, גובר) + `state.invNames` (מעמודת שם בגיליון, זיהוי ב-`detectColumns` → `nameCol`). `wigName()` מאחד. הכרטיס: שם ניתן לעריכה **ליד** הברקוד (אותו גודל). הדוחות מציגים עמודת **שם** בכל הקטגוריות (כולל חסרות).
+- **תיקון באג הגלילה בדוחות** — `renderReport(force)` מדלג על רינדור כשה-signature (`reportSignature`) לא השתנה (פולינג ה-4ש' לא מוחק את ה-DOM יותר), ומשחזר אקורדיונים פתוחים + מיקום גלילה כשכן מרנדר. **קריאות אחרי עריכה מקומית מעבירות `force=true`.**
+- **דיאלוגים מעוצבים במקום native** — `uiAlert` / `uiConfirm` (Promise-based, `.ui-dialog`/`.dlg-*` ב-CSS). **כלל: אף פעם לא `alert()`/`confirm()`/`prompt()` של הדפדפן.** מתועד כסקיל: `.claude/skills/styled-dialogs/` (פרויקט) ו-`~/.claude/skills/no-native-dialogs/` (גלובלי). היחיד שנשאר הוא `deferredPrompt.prompt()` (PWA install — לא דיאלוג).
+- אוחדה הלשון: **"סטטוס"** בכל מקום (במקום "סטטוס בשיטס").
+- בדיקות: `node tests/run.js` → **48 passed**. נבנה `wigsstock-app.html`, `sw.js` CACHE = `wigsstock-v16`.
+
+**פתוח להמשך:** סנכרון שמות + override-סטטוס בין עמדות (דורש שינוי backend); מחיר/היסטוריה בכרטיס (יש placeholder "מחיר והיסטוריה — בקרוב").
 
 ## ✅ מצב הענן (10/07/2026) — תקין
 ה-Worker חי ותקין: `curl https://wigsstock-sync.benzi-naor.workers.dev/api/health` → `{"ok":true,"service":"wigsstock-sync"}`.

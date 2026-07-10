@@ -483,6 +483,49 @@ td .ic { width: 15px; height: 15px; }
   border-radius: var(--r); background: var(--surface-2); color: var(--ink-3); font-size: 12.5px; }
 .pc-soon .ic { width: 16px; height: 16px; flex: none; }
 
+/* card header: editable name next to the barcode, same size */
+.pc-idrow { display: flex; align-items: center; gap: 10px; padding: 2px 0 16px; }
+.pc-name { flex: 1 1 auto; min-width: 0; font-size: 22px; font-weight: 700; letter-spacing: -.01em;
+  color: var(--ink); background: transparent; border: none; border-bottom: 1px dashed var(--line);
+  padding: 3px 2px; border-radius: 0; }
+.pc-name:focus { outline: none; border-bottom-color: var(--primary); }
+.pc-name::placeholder { color: var(--ink-3); font-weight: 600; }
+.pc-idrow .pc-bc { flex: none; margin: 0; font-size: 22px; letter-spacing: 1px; opacity: .95; }
+.pc-status { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 4px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.pc-status > span { color: var(--ink-3); font-size: 14px; }
+.pc-status select { flex: 0 1 auto; font-size: 15px; font-weight: 620; color: var(--ink);
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r); padding: 9px 12px; max-width: 62%; }
+.pc-status select:focus { outline: none; border-color: var(--primary); }
+.name-cell { font-weight: 600; }
+
+/* status manager (settings) */
+.st-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.st-row { display: flex; align-items: center; gap: 8px; }
+.st-label { flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 600; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 9px 11px; }
+.st-label:focus { outline: none; border-color: var(--primary); }
+.st-toggle { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.st-toggle input { width: 17px; height: 17px; accent-color: var(--primary); }
+.st-del { flex: none; }
+.st-del:disabled { opacity: .28; }
+.st-add { display: flex; gap: 8px; margin-top: 4px; }
+.st-add input { flex: 1 1 auto; min-width: 0; font-size: 14px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--r); padding: 9px 11px; color: var(--ink); }
+.st-add input:focus { outline: none; border-color: var(--primary); }
+.st-add .btn { flex: none; margin: 0; }
+
+/* ---------- In-app dialog (replaces native alert/confirm) ---------- */
+.ui-dialog { align-items: center; padding: 22px; z-index: 90; }
+.ui-dialog .dlg-card { width: 100%; max-width: 360px; border: 1px solid var(--line);
+  border-radius: var(--r-xl); padding: 22px 20px calc(20px + env(safe-area-inset-bottom));
+  animation: dlg-in .18s ease; }
+@keyframes dlg-in { from { transform: translateY(10px) scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }
+.dlg-title { font-size: 17px; font-weight: 700; letter-spacing: -.01em; color: var(--ink); margin-bottom: 8px; }
+.dlg-msg { font-size: 14.5px; line-height: 1.55; color: var(--ink-2); }
+.dlg-actions { display: flex; gap: 10px; margin-top: 22px; }
+.dlg-actions .btn { flex: 1; margin: 0; }
+
 /* ---------- Export polish ---------- */
 .btn-lg { height: 54px; font-size: 16px; font-weight: 620; border-radius: var(--r-lg); }
 .acc-body .btn.cat-export { margin: 0 0 10px; width: auto; padding: 0 16px; }

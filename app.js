@@ -9,22 +9,61 @@
 
 'use strict';
 
-/* ---------- Status model ---------- */
-// Statuses that mean "should physically be in the store" (treated as in-stock).
+/* ---------- Status model ----------
+ * A wig carries one status. The vocabulary is user-editable in Settings: each
+ * status has a Hebrew label (what the UI shows) and an `inStore` flag (does it
+ * mean the wig should physically be in the store — i.e. counts as inventory).
+ * The `key` is the canonical value, matching whatever the Google Sheet's status
+ * column contains. Any status seen in the sheet that isn't in the vocabulary is
+ * auto-added so the manager can label it and mark whether it's in-store. */
 const IN_STOCK = 'in-stock';
-const IN_STORE_STATUSES = ['in-stock', 'consignment'];
-function isInStore(status) { return IN_STORE_STATUSES.includes(status); }
-const KNOWN_STATUSES = [
-  'barter', 'consignment', 'fix-return', 'in-stock', 'inventory-reserved',
-  'missing', 'other', 'personal-use', 'returned', 'sold', 'wish-list'
+const DEFAULT_STATUSES = [
+  { key: 'in-stock',           label: 'במלאי',       inStore: true  },
+  { key: 'consignment',        label: 'קונסיגנציה',  inStore: true  },
+  { key: 'sold',               label: 'נמכרה',       inStore: false },
+  { key: 'returned',           label: 'הוחזרה',      inStore: false },
+  { key: 'fix-return',         label: 'תיקון/החזרה', inStore: false },
+  { key: 'personal-use',       label: 'שימוש אישי',  inStore: false },
+  { key: 'inventory-reserved', label: 'שמורה',       inStore: false },
+  { key: 'barter',             label: 'ברטר',        inStore: false },
+  { key: 'wish-list',          label: 'לרכישה',      inStore: false },
+  { key: 'missing',            label: 'חסרה',        inStore: false },
+  { key: 'other',              label: 'אחר',         inStore: false }
 ];
+// Effective vocabulary: the user's edited list if any, else the defaults.
+function statusVocab() { return (state.statusVocab && state.statusVocab.length) ? state.statusVocab : DEFAULT_STATUSES; }
+function statusMeta(key) { return statusVocab().find(s => s.key === key) || null; }
+function statusLabel(key) { const m = statusMeta(key); return m ? m.label : (key || '—'); }
+function isInStore(status) { const m = statusMeta(status); return m ? !!m.inStore : false; }
+// Promote the vocabulary to an editable copy (so edits don't mutate the shared default).
+function ensureVocabCopy() {
+  if (!state.statusVocab || !state.statusVocab.length) {
+    state.statusVocab = statusVocab().map(s => ({ key: s.key, label: s.label, inStore: !!s.inStore }));
+  }
+  return state.statusVocab;
+}
+// Make sure a status key exists in the vocabulary (used when importing the sheet).
+function ensureStatus(key) {
+  if (!key || statusMeta(key)) return;
+  ensureVocabCopy().push({ key, label: key, inStore: false });
+}
+// Legacy export — the current set of status keys.
+const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 
 // Deployed cloud backend — used by default so the app syncs out of the box.
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '1.10.0';
 const CHANGELOG = [
+  { v: '1.10.0', notes: [
+    'כרטיס הפאה: שם ליד הברקוד (ניתן לעריכה) וסטטוס שניתן לשנות ישירות מהכרטיס',
+    'ניהול סטטוסים בהגדרות — שם לכל סטטוס וסימון מה נחשב "בחנות"; סטטוסים חדשים מהשיטס נוספים לבד',
+    'הדוחות מציגים גם את שם הפאה (לא רק ברקוד), כולל ברשימת החסרות',
+    'תוקן באג הגלילה בדוחות — האקורדיונים לא נסגרים/קופצים יותר בזמן גלילה',
+    'טעינת שם הפאה מעמודת שם בגיליון (אם קיימת)',
+    'אוחדה הלשון: "סטטוס" בכל מקום (במקום "סטטוס בשיטס")'
+  ] },
   { v: '1.9.0', notes: [
     'כרטיס מוצר לכל פאה — הקשה על ברקוד פותחת כרטיס עם סטטוס ופרטים (תשתית לשם/מחיר/היסטוריה בהמשך)',
     'בחירת צליל סריקה בהגדרות (קלאסי / עדין / סורק / פעמון / שקט)',
@@ -91,8 +130,33 @@ const state = {
   apiKey: '',        // optional shared secret (only needed if the Worker enforces one)
   accent: '',        // brand accent theme key (see ACCENTS; '' = default)
   dark: false,       // dark appearance
-  sound: ''          // scan sound profile key (see SOUNDS; '' = classic)
+  sound: '',         // scan sound profile key (see SOUNDS; '' = classic)
+  names: {},         // barcode -> wig name typed in the app (local, wins over the sheet)
+  invNames: {},      // barcode -> wig name read from the sheet's name column (if any)
+  statusOverrides: {}, // barcode -> status changed from the wig card (survives sheet reload)
+  statusVocab: null  // user-edited status vocabulary ([{key,label,inStore}]); null = defaults
 };
+
+/* ---------- Per-wig helpers ----------
+ * Effective status = a card override if one was set, else the sheet's value.
+ * Effective name = an in-app edit, else the sheet's name column, else empty. */
+function statusOf(bc) {
+  if (state.statusOverrides && bc in state.statusOverrides) return state.statusOverrides[bc];
+  return state.inventory[bc];
+}
+function effInv() {
+  const ov = state.statusOverrides;
+  if (!ov || !Object.keys(ov).length) return state.inventory;
+  const out = Object.assign({}, state.inventory);
+  for (const bc in ov) out[bc] = ov[bc];
+  return out;
+}
+function isKnownWig(bc) {
+  return (bc in state.inventory) || !!(state.statusOverrides && bc in state.statusOverrides);
+}
+function wigName(bc) {
+  return (state.names && state.names[bc]) || (state.invNames && state.invNames[bc]) || '';
+}
 
 /* ---------- Appearance / brand themes ----------
  * Changing --primary re-themes the whole app (buttons, nav, FAB, active tab,
@@ -143,6 +207,51 @@ function load() {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+
+/* ---------- In-app dialogs ----------
+ * The app NEVER uses the browser's native alert()/confirm() — those are
+ * unstyled Chrome chrome and break the brand. Every message and confirmation
+ * goes through this styled modal (buttons, colors and radius from our own CSS
+ * tokens). uiAlert → Promise<void>; uiConfirm → Promise<boolean>. */
+function uiDialog(opts) {
+  opts = opts || {};
+  return new Promise((resolve) => {
+    const existing = document.querySelector('.ui-dialog');
+    if (existing) existing.remove();
+    const wrap = document.createElement('div');
+    wrap.className = 'modal ui-dialog';
+    const hasCancel = opts.cancelText !== null && opts.cancelText !== undefined;
+    wrap.innerHTML =
+      `<div class="modal-card dlg-card" role="alertdialog" aria-modal="true">` +
+        (opts.title ? `<div class="dlg-title">${esc(opts.title)}</div>` : '') +
+        `<div class="dlg-msg">${esc(opts.message || '').replace(/\n/g, '<br>')}</div>` +
+        `<div class="dlg-actions">` +
+          (hasCancel ? `<button type="button" class="btn ghost dlg-cancel">${esc(opts.cancelText || 'ביטול')}</button>` : '') +
+          `<button type="button" class="btn${opts.danger ? ' danger' : ''} dlg-ok">${esc(opts.confirmText || 'אישור')}</button>` +
+        `</div>` +
+      `</div>`;
+    document.body.appendChild(wrap);
+    const finish = (val) => { document.removeEventListener('keydown', onKey, true); wrap.remove(); resolve(val); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+      else if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    };
+    wrap.querySelector('.dlg-ok').addEventListener('click', () => finish(true));
+    const cancelBtn = wrap.querySelector('.dlg-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', () => finish(false));
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) finish(false); });
+    document.addEventListener('keydown', onKey, true);
+    setTimeout(() => { const b = wrap.querySelector('.dlg-ok'); if (b) b.focus(); }, 20);
+  });
+}
+function uiAlert(message, opts) {
+  opts = opts || {};
+  return uiDialog({ title: opts.title, message, confirmText: opts.confirmText || 'הבנתי', cancelText: null, danger: opts.danger });
+}
+function uiConfirm(message, opts) {
+  opts = opts || {};
+  return uiDialog({ title: opts.title, message, confirmText: opts.confirmText || 'אישור', cancelText: opts.cancelText || 'ביטול', danger: opts.danger });
+}
 
 /* Normalize a barcode for matching. The sheet import and every scan pass through
  * this, so the two sides always normalize identically:
@@ -231,18 +340,21 @@ function detectColumns(rows) {
   const header = rows[0].map(h => h.trim().toLowerCase());
   const barcodeHints = ['barcode', 'ברקוד', 'קוד', 'code', 'מספר', 'number', 'sku', 'id', 'פאה', 'wig'];
   const statusHints = ['status', 'סטטוס', 'מצב', 'state'];
+  const nameHints = ['שם', 'name', 'דגם', 'model', 'תיאור', 'description', 'desc', 'כותרת', 'title'];
 
   let barcodeCol = header.findIndex(h => barcodeHints.some(x => h.includes(x)));
   let statusCol = header.findIndex(h => statusHints.some(x => h.includes(x)));
+  let nameCol = header.findIndex(h => nameHints.some(x => h.includes(x)));
 
   // If a real header wasn't found, treat everything as data with default columns.
-  const looksLikeHeader = barcodeCol !== -1 || statusCol !== -1 ||
+  const looksLikeHeader = barcodeCol !== -1 || statusCol !== -1 || nameCol !== -1 ||
     header.some(h => isNaN(Number(h)) && h !== '');
 
   if (barcodeCol === -1) barcodeCol = 0;
   if (statusCol === -1) statusCol = 1;
+  if (nameCol === barcodeCol || nameCol === statusCol) nameCol = -1;   // don't reuse a column
 
-  return { barcodeCol, statusCol, hasHeader: looksLikeHeader };
+  return { barcodeCol, statusCol, nameCol, hasHeader: looksLikeHeader };
 }
 
 function importInventory(text) {
@@ -251,23 +363,25 @@ function importInventory(text) {
   const map = detectColumns(rows);
   const dataRows = map.hasHeader ? rows.slice(1) : rows;
 
-  const inv = {};
+  const inv = {}, invNames = {};
   let added = 0, unknownStatus = 0;
   for (const r of dataRows) {
     const barcode = normBarcode(r[map.barcodeCol] || '');
     let status = (r[map.statusCol] || '').trim().toLowerCase();
     if (!barcode) continue;
-    if (!KNOWN_STATUSES.includes(status)) {
-      // keep it but flag – unknown/blank statuses are treated as "other"
-      if (status) unknownStatus++;
-      status = status || 'other';
-    }
+    if (!status) status = 'other';
+    else if (!statusMeta(status)) { unknownStatus++; ensureStatus(status); }   // keep the real value; let the manager label it
     inv[barcode] = status;
+    if (map.nameCol != null && map.nameCol >= 0) {
+      const nm = (r[map.nameCol] || '').trim();
+      if (nm) invNames[barcode] = nm;
+    }
     added++;
   }
   state.inventory = inv;
+  state.invNames = invNames;
   save();
-  return { added, unknownStatus, barcodeCol: map.barcodeCol, statusCol: map.statusCol, header: map.hasHeader ? rows[0] : null };
+  return { added, unknownStatus, hasNames: Object.keys(invNames).length, barcodeCol: map.barcodeCol, statusCol: map.statusCol, header: map.hasHeader ? rows[0] : null };
 }
 
 /* =====================================================================
@@ -288,7 +402,7 @@ function effectiveScans() {
 }
 
 function reconcile() {
-  const inv = state.inventory, scans = effectiveScans();
+  const inv = effInv(), scans = effectiveScans();
   const invKeys = Object.keys(inv);
   const scanKeys = Object.keys(scans);
 
@@ -815,7 +929,7 @@ function accCard(title, badge, desc, body, open) {
 }
 
 function statusBreakdownTable() {
-  const inv = state.inventory, scans = effectiveScans();
+  const inv = effInv(), scans = effectiveScans();
   const totals = {}, scanned = {};
   for (const bc in inv) {
     const st = inv[bc];
@@ -825,7 +939,7 @@ function statusBreakdownTable() {
   const keys = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
   if (!keys.length) return '<p class="muted small">—</p>';
   const rows = keys.map(st =>
-    `<tr><td><span class="tag ${isInStore(st) ? 'instock' : 'other'}">${esc(st)}</span></td>` +
+    `<tr><td><span class="tag ${isInStore(st) ? 'instock' : 'other'}">${esc(statusLabel(st))}</span></td>` +
     `<td>${totals[st].toLocaleString()}</td><td>${(scanned[st] || 0).toLocaleString()}</td></tr>`).join('');
   return `<div class="scroll"><table><thead><tr><th>סטטוס</th><th>סה"כ</th><th>נסרקו</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -873,8 +987,8 @@ let lookupStream = null, lookupTimer = null, lookupReader = null, lookupCanvas =
 async function openLookupScan() {
   if (lookupOn) return;
   const overlay = $('#scanOverlay');
-  if (!isSecureContextForCamera()) { alert('למצלמה צריך כתובת מאובטחת (https). אפשר גם להקליד את הברקוד ידנית בשדה החיפוש.'); return; }
-  if (!window.ZXing || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { alert('הדפדפן לא תומך במצלמה. הקלידי את הברקוד בשדה החיפוש.'); return; }
+  if (!isSecureContextForCamera()) { uiAlert('למצלמה צריך כתובת מאובטחת (https). אפשר גם להקליד את הברקוד ידנית בשדה החיפוש.'); return; }
+  if (!window.ZXing || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { uiAlert('הדפדפן לא תומך במצלמה. הקלידי את הברקוד בשדה החיפוש.'); return; }
   overlay.classList.remove('hidden');
   $('#overlayNote').textContent = 'פותח מצלמה…';
   const video = $('#overlayVideo');
@@ -934,12 +1048,13 @@ function closeLookupScan() {
 }
 
 /* ---------- Wig product card ----------
- * Every wig is a product identified by its barcode. Today a wig only carries a
- * status (in stock or not); this card is the place future per-wig fields (name,
- * price, history, …) will live. Opened by tapping any barcode. */
+ * Every wig is a product identified by its barcode. The card shows and lets you
+ * edit its name (next to the barcode) and its status, plus scan/store details.
+ * Opened by tapping any barcode. Name and status edits are stored locally and
+ * survive a sheet reload (see state.names / state.statusOverrides). */
 function wigVerdict(bc) {
-  const inInv = bc in state.inventory;
-  const status = inInv ? state.inventory[bc] : null;
+  const inInv = isKnownWig(bc);
+  const status = inInv ? statusOf(bc) : null;
   const scanned = (effectiveScans()[bc] || {}).count || 0;
   if (!inInv && !scanned) return { cls: 'muted', glyph: 'search', text: 'לא נמצאה', status, scanned, inInv };
   if (!inInv) return { cls: 'unknown', glyph: 'help', text: 'ברקוד לא מוכר', status, scanned, inInv };
@@ -948,73 +1063,146 @@ function wigVerdict(bc) {
   if (!isInStore(status) && scanned) return { cls: 'warn', glyph: 'alert', text: 'בחנות אך מסומנת אחרת', status, scanned, inInv };
   return { cls: 'muted', glyph: 'info', text: 'לא אמורה בחנות', status, scanned, inInv };
 }
+
+let productBc = '';
 function openProductCard(bc) {
   bc = normBarcode(bc);
+  if (!bc) return;
+  productBc = bc;
+  renderProductCard();
+  const m = $('#productModal'); if (m) m.classList.remove('hidden');
+}
+function renderProductCard() {
+  const bc = productBc;
   const el = $('#productBody');
   if (!el || !bc) return;
   const v = wigVerdict(bc);
   const d = state.cloudDetail && state.cloudDetail[bc];
+  const nm = wigName(bc);
   const field = (label, val) => `<div class="pc-field"><span>${label}</span><b>${val}</b></div>`;
+  // status dropdown from the vocabulary (plus the wig's own value if it's unlisted)
+  let opts = statusVocab().map(s =>
+    `<option value="${esc(s.key)}"${s.key === v.status ? ' selected' : ''}>${esc(s.label)}</option>`).join('');
+  if (v.status && !statusMeta(v.status)) opts += `<option value="${esc(v.status)}" selected>${esc(v.status)}</option>`;
   el.innerHTML = `
-    <div class="pc-head">
-      <div class="pc-kicker">פאה</div>
-      <div class="pc-bc">${esc(bc)}</div>
+    <div class="pc-idrow">
+      <input id="pcName" class="pc-name" value="${esc(nm)}" placeholder="שם הפאה" autocomplete="off" maxlength="60">
+      <div class="pc-bc" title="ברקוד">${esc(bc)}</div>
     </div>
     <div class="pc-verdict ${v.cls}">${ic(v.glyph)} ${esc(v.text)}</div>
+    <label class="pc-status">
+      <span>סטטוס</span>
+      <select id="pcStatus">${opts}</select>
+    </label>
     <div class="pc-fields">
-      ${field('סטטוס בשיטס', v.inInv ? esc(v.status) : '—')}
       ${field('בחנות', v.inInv && isInStore(v.status) ? 'כן' : 'לא')}
       ${field('נסרקה', v.scanned ? ('כן · ' + v.scanned + ' פעמים') : 'לא')}
       ${d && d.station ? field('עמדה', esc(d.station)) : ''}
     </div>
-    <div class="pc-soon">${ic('info')} שם, מחיר, היסטוריה ופרטים נוספים — בקרוב</div>`;
-  const m = $('#productModal'); if (m) m.classList.remove('hidden');
+    <div class="pc-soon">${ic('info')} מחיר והיסטוריה — בקרוב</div>`;
+  const nameEl = $('#pcName');
+  if (nameEl) {
+    const commit = () => setWigName(bc, nameEl.value);
+    nameEl.addEventListener('change', commit);
+    nameEl.addEventListener('blur', commit);
+  }
+  const stEl = $('#pcStatus');
+  if (stEl) stEl.addEventListener('change', () => setWigStatus(bc, stEl.value));
 }
-function closeProductCard() { const m = $('#productModal'); if (m) m.classList.add('hidden'); }
+// Save an in-app wig name (empty clears it). Refresh the lists that show names.
+function setWigName(bc, name) {
+  name = (name || '').trim();
+  state.names = state.names || {};
+  if (name) state.names[bc] = name; else delete state.names[bc];
+  save();
+  renderReport(true); renderInventoryStatus();
+}
+// Change a wig's status from the card. Kept as a local override; if it matches
+// the sheet's own value again, the override is dropped so nothing lingers.
+function setWigStatus(bc, status) {
+  state.statusOverrides = state.statusOverrides || {};
+  if (state.inventory[bc] === status) delete state.statusOverrides[bc];
+  else state.statusOverrides[bc] = status;
+  save();
+  renderProductCard();                 // verdict + "בחנות" reflect the new status
+  renderReport(true); renderScanStats(); renderInventoryStatus();
+}
+function closeProductCard() { productBc = ''; const m = $('#productModal'); if (m) m.classList.add('hidden'); }
 
 // Status readout for one specific wig — shown when the search query exactly
 // identifies a barcode (typed or scanned via the search's camera button).
 function lookupCard(query) {
   const bc = normBarcode(query || '');
   if (!bc) return '';
-  const inInv = bc in state.inventory;
+  const inInv = isKnownWig(bc);
   const scans = effectiveScans();
   const scanned = bc in scans ? scans[bc].count : 0;
+  const nm = wigName(bc);
+  const title = nm ? `${esc(nm)} · ${esc(bc)}` : esc(bc);
   if (!inInv && !scanned) {
-    return `<div class="lookup none"><div class="lookup-bc">${ic('search', 'muted')} ${esc(bc)}</div>` +
+    return `<div class="lookup none"><div class="lookup-bc">${ic('search', 'muted')} ${title}</div>` +
       `<div class="lookup-line">לא נמצאה — לא בקובץ המלאי וגם לא נסרקה.</div></div>`;
   }
-  const status = inInv ? state.inventory[bc] : null;
+  const status = inInv ? statusOf(bc) : null;
   let cls, glyph, verdict;
   if (!inInv) { cls = 'unknown'; glyph = 'help'; verdict = 'ברקוד לא מוכר — נסרק אך לא קיים בקובץ'; }
   else if (isInStore(status) && scanned) { cls = 'ok'; glyph = 'check'; verdict = 'תקין — במלאי ונסרקה'; }
   else if (isInStore(status) && !scanned) { cls = 'bad'; glyph = 'x'; verdict = 'חסרה — אמורה בחנות אך לא נסרקה'; }
-  else if (!isInStore(status) && scanned) { cls = 'warn'; glyph = 'alert'; verdict = 'בחנות אך מסומנת אחרת — צריך להחזיר ל-in-stock'; }
-  else { cls = 'muted'; glyph = 'info'; verdict = 'רשומה בשיטס, לא אמורה להיות בחנות ולא נסרקה'; }
+  else if (!isInStore(status) && scanned) { cls = 'warn'; glyph = 'alert'; verdict = 'בחנות אך מסומנת אחרת'; }
+  else { cls = 'muted'; glyph = 'info'; verdict = 'רשומה במלאי, לא אמורה להיות בחנות ולא נסרקה'; }
   const d = state.cloudDetail && state.cloudDetail[bc];
   const station = d && d.station ? `<div class="lookup-line">עמדה: <b>${esc(d.station)}</b></div>` : '';
   return `<div class="lookup ${cls}">
-    <div class="lookup-bc bc-link" data-wig="${esc(bc)}">${esc(bc)}</div>
+    <div class="lookup-bc bc-link" data-wig="${esc(bc)}">${title}</div>
     <div class="lookup-verdict">${ic(glyph)} ${verdict}</div>
-    <div class="lookup-line">סטטוס בשיטס: <b>${inInv ? esc(status) : '—'}</b></div>
+    <div class="lookup-line">סטטוס: <b>${inInv ? esc(statusLabel(status)) : '—'}</b></div>
     <div class="lookup-line">נסרקה: <b>${scanned ? ('כן · ' + scanned + ' פעמים') : 'לא'}</b></div>
     ${station}
   </div>`;
 }
 
-function renderReport() {
+// A stable signature of everything that affects the report's markup. When it's
+// unchanged (e.g. the 4-second cloud poll returned identical data) we skip the
+// rebuild entirely, so open accordions and the scroll position never get stomped
+// mid-scroll. Local edits (name/status) pass force=true to always repaint.
+let reportSig = null;
+function reportSignature(r, q) {
+  return JSON.stringify([q, r.totalInventory, r.totalScanned, r.ok.length, r.missing.length,
+    r.foundOther.length, r.unknown.length, r.duplicates.length, r.expectedInStock,
+    state.cloudDevices || 0, Object.keys(state.cloudDetail || {}).length]);
+}
+
+function renderReport(force) {
   const r = reconcile();
   const el = $('#reportBody');
   if (!r.totalInventory) {
     el.innerHTML = '<div class="card"><p class="muted">עדיין לא נטען מלאי. עברי ללשונית "מלאי" כדי לטעון קובץ, או להגדרות → "מלאי מגוגל שיטס".</p></div>';
+    reportSig = null;
     return;
   }
 
   const q = reportQuery.trim().toLowerCase();
-  const filt = (list) => q ? list.filter(i => String(i.barcode).toLowerCase().includes(q)) : list;
+  const sig = reportSignature(r, q);
+  if (!force && sig === reportSig && el.children.length) return;   // nothing changed — leave the DOM (and scroll) alone
+
+  // Preserve which accordions the user has open, and the scroll position, across
+  // the rebuild (only the report tab's own scroll — never yank another tab).
+  const openIds = $$('#reportBody [id^="acc-"]').filter(w => w.querySelector('.acc.open')).map(w => w.id);
+  const onReport = !!document.querySelector('#panel-report.active');
+  const sx = window.scrollX, sy = window.scrollY;
+  reportSig = sig;
+
+  const filt = (list) => q ? list.filter(i =>
+    String(i.barcode).toLowerCase().includes(q) || wigName(i.barcode).toLowerCase().includes(q)) : list;
+  const nameCol = { label: 'שם', render: i => {
+    const nm = wigName(i.barcode);
+    return `<span class="bc-link name-cell" data-wig="${esc(i.barcode)}">${nm ? esc(nm) : '<span class="muted">פאה</span>'}</span>`;
+  } };
   const bcCol = { label: 'ברקוד', render: i => `<b class="bc-link" data-wig="${esc(i.barcode)}">${esc(i.barcode)}</b>` };
-  const statusCol = { label: 'סטטוס בשיטס', render: i =>
-    `<span class="tag ${isInStore(i.status) ? 'instock' : 'other'}">${esc(i.status)}</span>` };
+  const statusCol = { label: 'סטטוס', render: i => {
+    const st = i.status != null ? i.status : statusOf(i.barcode);
+    return `<span class="tag ${isInStore(st) ? 'instock' : 'other'}">${esc(statusLabel(st))}</span>`;
+  } };
   const countCol = { label: 'פעמים', render: i => i.count };
   const stationCol = { label: 'עמדה', render: i => {
     const d = state.cloudDetail && state.cloudDetail[i.barcode];
@@ -1059,30 +1247,34 @@ function renderReport() {
     </div>
 
     <div id="acc-other">${accCard(ic('alert', 'warn') + ' בחנות אך מסומן אחרת', r.foundOther.length,
-      '', tableFor(fOther, [bcCol, statusCol, stationCol, delCol]), openIf(fOther.length))}</div>
+      '', tableFor(fOther, [nameCol, bcCol, statusCol, stationCol, delCol]), openIf(fOther.length))}</div>
 
     <div id="acc-missing">${accCard(ic('x', 'bad') + ' חסרות', r.missing.length,
-      '', tableFor(fMissing, [bcCol]), openIf(fMissing.length))}</div>
+      '', tableFor(fMissing, [nameCol, bcCol, statusCol]), openIf(fMissing.length))}</div>
 
     <div id="acc-unknown">${accCard(ic('help', 'unknown') + ' ברקודים לא מוכרים', r.unknown.length,
-      '', tableFor(fUnknown, [bcCol, countCol, stationCol, delCol]), openIf(fUnknown.length))}</div>
+      '', tableFor(fUnknown, [nameCol, bcCol, countCol, stationCol, delCol]), openIf(fUnknown.length))}</div>
 
     <div id="acc-dup">${accCard(ic('copy', 'dup') + ' כפילויות', r.duplicates.length, '',
-      tableFor(fDup, [bcCol, countCol]), openIf(fDup.length))}</div>
+      tableFor(fDup, [nameCol, bcCol, countCol]), openIf(fDup.length))}</div>
 
     <div id="acc-ok">${accCard(ic('check', 'ok') + ' תקין', r.ok.length, '',
-      tableFor(fOk, [bcCol, stationCol, delCol]), openIf(fOk.length))}</div>
+      tableFor(fOk, [nameCol, bcCol, statusCol, stationCol, delCol]), openIf(fOk.length))}</div>
 
     <div id="acc-stations">${accCard(ic('users') + ' פילוח לפי עמדה / עובדת', Object.keys(state.cloudDetail || {}).length ? (state.cloudDevices || '') : '',
       '', stationBreakdown())}</div>
 
-    <div id="acc-status">${accCard(ic('bars') + ' פילוח לפי סטטוס בשיטס', r.totalInventory.toLocaleString(),
+    <div id="acc-status">${accCard(ic('bars') + ' פילוח לפי סטטוס', r.totalInventory.toLocaleString(),
       '', statusBreakdownTable())}</div>
   `;
 
+  // restore the accordions the user had open, and the scroll they were at
+  openIds.forEach(id => { const w = document.getElementById(id); const a = w && w.querySelector('.acc'); if (a) a.classList.add('open'); });
+  if (onReport && (window.scrollX !== sx || window.scrollY !== sy)) window.scrollTo(sx, sy);
+
   const search = $('#reportSearch');
   if (search) {
-    search.oninput = () => { reportQuery = search.value; renderReport(); };
+    search.oninput = () => { reportQuery = search.value; renderReport(true); };
     if (q) { const pos = search.value.length; search.focus(); try { search.setSelectionRange(pos, pos); } catch (e) {} }
   }
   const scanBtn = $('#reportScanBtn');
@@ -1106,10 +1298,10 @@ function renderInventoryStatus() {
     return;
   }
   const counts = {};
-  for (const s of Object.values(state.inventory)) counts[s] = (counts[s] || 0) + 1;
+  for (const s of Object.values(effInv())) counts[s] = (counts[s] || 0) + 1;
   const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([s, c]) =>
     `<div class="inv-row">
-      <span class="inv-name"><span class="inv-dot ${isInStore(s) ? 'in' : ''}"></span>${esc(s)}</span>
+      <span class="inv-name"><span class="inv-dot ${isInStore(s) ? 'in' : ''}"></span>${esc(statusLabel(s))}</span>
       <span class="inv-count">${c.toLocaleString()}</span>
     </div>`).join('');
   el.innerHTML = `
@@ -1148,9 +1340,9 @@ function stamp() {
 /* ---------- Report data builders (header row first) ---------- */
 function dataReconciliation() {
   const r = reconcile();
-  const rows = [['barcode', 'category', 'sheet_status', 'scan_count']];
+  const rows = [['barcode', 'name', 'category', 'status', 'scan_count']];
   const push = (list, cat) => list.forEach(i =>
-    rows.push([i.barcode, cat, i.status || (state.inventory[i.barcode] || ''), (state.scans[i.barcode]?.count) || (i.count || '')]));
+    rows.push([i.barcode, wigName(i.barcode), cat, i.status || statusOf(i.barcode) || '', (state.scans[i.barcode]?.count) || (i.count || '')]));
   push(r.foundOther, 'in-store-but-flagged');
   push(r.missing, 'missing');
   push(r.unknown, 'unknown-barcode');
@@ -1159,9 +1351,9 @@ function dataReconciliation() {
 }
 function dataUpdates() {
   const r = reconcile();
-  const rows = [['barcode', 'current_status', 'suggested_status', 'reason']];
-  r.foundOther.forEach(i => rows.push([i.barcode, i.status, IN_STOCK, 'נסרק בחנות']));
-  r.missing.forEach(i => rows.push([i.barcode, IN_STOCK, 'missing', 'רשום in-stock אך לא נסרק']));
+  const rows = [['barcode', 'name', 'current_status', 'suggested_status', 'reason']];
+  r.foundOther.forEach(i => rows.push([i.barcode, wigName(i.barcode), i.status, IN_STOCK, 'נסרק בחנות']));
+  r.missing.forEach(i => rows.push([i.barcode, wigName(i.barcode), IN_STOCK, 'missing', 'רשום in-stock אך לא נסרק']));
   return rows;
 }
 function dataScans() {
@@ -1408,7 +1600,7 @@ function markAllDirty() { Object.keys(state.scans).forEach(b => { state.dirty[b]
 // Delete/correct a single barcode's scans across the whole count.
 async function deleteScan(barcode) {
   barcode = String(barcode);
-  if (!confirm('למחוק את הסריקה של ' + barcode + '?\n(מכל העמדות בספירה)')) return;
+  if (!(await uiConfirm('למחוק את הסריקה של ' + barcode + '?\n(מכל העמדות בספירה)', { danger: true, confirmText: 'מחק' }))) return;
   delete state.scans[barcode];
   delete state.dirty[barcode];
   if (state.cloudScans) delete state.cloudScans[barcode];
@@ -1423,7 +1615,7 @@ async function deleteScan(barcode) {
       });
       const j = await r.json().catch(() => ({}));
       if (j.reset_at) { state.lastResetSeen = j.reset_at; save(); }   // don't self-wipe on the resync it triggers
-    } catch (e) { alert('נמחק מקומית, אך הענן לא עודכן: ' + e.message); }
+    } catch (e) { uiAlert('נמחק מקומית, אך הענן לא עודכן: ' + e.message); }
   }
 }
 
@@ -1610,13 +1802,13 @@ function init() {
       apiKeyEl.addEventListener('change', () => { state.apiKey = apiKeyEl.value.trim(); save(); });
     }
     $('#cloudTest').addEventListener('click', async () => {
-      if (!state.cloudUrl) { alert('הזיני קודם כתובת שרת'); return; }
+      if (!state.cloudUrl) { uiAlert('הזיני קודם כתובת שרת'); return; }
       try {
         const r = await fetch(cloudBase() + '/api/health');
-        alert(r.ok ? '✅ החיבור תקין' : '⚠️ השרת ענה עם שגיאה ' + r.status);
-      } catch (e) { alert('❌ לא הצלחתי להתחבר: ' + e.message); }
+        uiAlert(r.ok ? 'החיבור תקין ✓' : 'השרת ענה עם שגיאה ' + r.status, { title: r.ok ? 'בדיקת חיבור' : undefined, danger: !r.ok });
+      } catch (e) { uiAlert('לא הצלחתי להתחבר: ' + e.message, { danger: true }); }
     });
-    $('#cloudPull').addEventListener('click', () => { if (cloudEnabled()) pullCloud(); else alert('הגדירי כתובת שרת ושם ספירה'); });
+    $('#cloudPull').addEventListener('click', () => { if (cloudEnabled()) pullCloud(); else uiAlert('הגדירי כתובת שרת ושם ספירה'); });
 
     if (cloudEnabled()) {
       if (cloudDefaulted) markAllDirty();   // push any pre-existing local scans up once
@@ -1722,8 +1914,10 @@ function init() {
     writeEl.addEventListener('change', () => { state.writeUrl = writeEl.value.trim(); save(); registerScriptUrl(); });
     $('#writeBtn').addEventListener('click', () => { state.writeUrl = writeEl.value.trim(); save(); writeToSheet(); });
   }
-  $('#clearInv').addEventListener('click', () => {
-    if (confirm('למחוק את המלאי שנטען?')) { state.inventory = {}; save(); renderInventoryStatus(); renderReport(); }
+  $('#clearInv').addEventListener('click', async () => {
+    if (await uiConfirm('למחוק את המלאי שנטען?', { danger: true, confirmText: 'מחק' })) {
+      state.inventory = {}; state.invNames = {}; save(); renderInventoryStatus(); renderReport(true);
+    }
   });
 
   // install to home screen
@@ -1737,7 +1931,7 @@ function init() {
 
   // reset scans
   $('#resetScans').addEventListener('click', async () => {
-    if (!confirm('לאפס את כל הסריקות של הספירה הזו?\n(כולל בענן — לכל העמדות. המלאי יישאר)')) return;
+    if (!(await uiConfirm('לאפס את כל הסריקות של הספירה הזו?\n(כולל בענן — לכל העמדות. המלאי יישאר)', { danger: true, confirmText: 'אפס' }))) return;
     state.scans = {}; state.dirty = {}; state.cloudScans = {}; state.sessionLog = [];
     undoStack.length = 0; redoStack.length = 0; updateUndoRedo();
     save();
@@ -1749,7 +1943,7 @@ function init() {
         });
         const rj = await rr.json().catch(() => ({}));
         if (rj.reset_at) { state.lastResetSeen = rj.reset_at; save(); }   // don't re-trigger on our own reset
-      } catch (e) { alert('אופס מקומי בוצע, אך לא הצלחתי לאפס בענן: ' + e.message); }
+      } catch (e) { uiAlert('אופס מקומי בוצע, אך לא הצלחתי לאפס בענן: ' + e.message, { danger: true }); }
     }
     renderReport(); renderScanStats(); renderPending(); renderSessionLog();
     $('#scanBanner').className = 'scan-banner';
@@ -1794,7 +1988,7 @@ function init() {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => { alert('מוזגו ' + mergeScans(reader.result) + ' סריקות.'); renderExportPreview(); };
+    reader.onload = () => { const n = mergeScans(reader.result); renderExportPreview(); uiAlert('מוזגו ' + n + ' סריקות.', { title: 'מיזוג הושלם' }); };
     reader.readAsText(file, 'UTF-8');
   });
 
@@ -1818,11 +2012,81 @@ function init() {
 function setupTheme() {
   renderTheme();
   renderSound();
+  renderStatusManager();
   const darkEl = $('#darkToggle');
   if (darkEl) {
     darkEl.checked = !!state.dark;
     darkEl.addEventListener('change', () => { state.dark = darkEl.checked; save(); applyTheme(); });
   }
+}
+
+/* ---------- Status manager (Settings) ----------
+ * Lets the manager rename each status (the Hebrew label shown everywhere) and
+ * toggle whether it counts as "in the store" (inventory). New statuses can be
+ * added; sheet-imported ones appear here automatically. */
+function renderStatusManager() {
+  const el = $('#statusManager');
+  if (!el) return;
+  const v = statusVocab();
+  const isDefault = k => DEFAULT_STATUSES.some(d => d.key === k);
+  const rows = v.map(s => `
+    <div class="st-row" data-st-key="${esc(s.key)}">
+      <input class="st-label" data-st-label value="${esc(s.label)}" maxlength="24" autocomplete="off" aria-label="שם הסטטוס">
+      <label class="st-toggle"><input type="checkbox" data-st-instore${s.inStore ? ' checked' : ''}><span>בחנות</span></label>
+      <button class="icon-btn danger st-del" title="מחק סטטוס"${isDefault(s.key) ? ' disabled' : ''}>${ic('trash')}</button>
+    </div>`).join('');
+  el.innerHTML = `
+    <p class="muted small">כל פאה מקבלת סטטוס. סמני אילו סטטוסים נחשבים "בחנות" (נספרים במלאי). השם הוא מה שמוצג באפליקציה.</p>
+    <div class="st-list">${rows}</div>
+    <div class="st-add">
+      <input id="stNewLabel" placeholder="שם סטטוס חדש" maxlength="24" autocomplete="off">
+      <button class="btn secondary small-btn" id="stAdd">${ic('check')} הוסף</button>
+    </div>
+    <button class="btn ghost small-btn" id="stReset" style="margin-top:12px">${ic('reset')} אפס לרשימת ברירת המחדל</button>`;
+
+  const afterEdit = () => { save(); renderReport(true); renderScanStats(); renderInventoryStatus(); };
+
+  el.querySelectorAll('.st-row').forEach(row => {
+    const key = row.getAttribute('data-st-key');
+    const labelEl = row.querySelector('[data-st-label]');
+    const inStoreEl = row.querySelector('[data-st-instore]');
+    const delEl = row.querySelector('.st-del');
+    if (labelEl) labelEl.addEventListener('change', () => {
+      const v2 = ensureVocabCopy(); const t = v2.find(s => s.key === key);
+      if (t) { t.label = labelEl.value.trim() || key; afterEdit(); }
+    });
+    if (inStoreEl) inStoreEl.addEventListener('change', () => {
+      const v2 = ensureVocabCopy(); const t = v2.find(s => s.key === key);
+      if (t) { t.inStore = inStoreEl.checked; afterEdit(); }
+    });
+    if (delEl && !delEl.disabled) delEl.addEventListener('click', () => {
+      const v2 = ensureVocabCopy(); const i = v2.findIndex(s => s.key === key);
+      if (i >= 0) { v2.splice(i, 1); afterEdit(); renderStatusManager(); }
+    });
+  });
+
+  const addBtn = $('#stAdd'), newEl = $('#stNewLabel');
+  const doAdd = () => {
+    const label = (newEl.value || '').trim();
+    if (!label) { newEl.focus(); return; }
+    const v2 = ensureVocabCopy();
+    // a stable, collision-free key derived from the label (or a fallback)
+    let base = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'status';
+    let key = base, n = 2;
+    while (v2.some(s => s.key === key)) key = base + '-' + (n++);
+    v2.push({ key, label, inStore: false });
+    newEl.value = '';
+    afterEdit(); renderStatusManager();
+  };
+  if (addBtn) addBtn.addEventListener('click', doAdd);
+  if (newEl) newEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
+
+  const resetBtn = $('#stReset');
+  if (resetBtn) resetBtn.addEventListener('click', async () => {
+    if (!(await uiConfirm('לאפס את רשימת הסטטוסים לברירת המחדל? (התוויות והסימונים המותאמים יימחקו)', { danger: true, confirmText: 'אפס' }))) return;
+    state.statusVocab = null; save();
+    renderStatusManager(); renderReport(true); renderScanStats(); renderInventoryStatus();
+  });
 }
 function renderTheme() {
   const wrap = $('#accentSwatches');
@@ -1858,12 +2122,14 @@ function renderVersions() {
 
 function handleImport(text) {
   const res = importInventory(text);
-  if (res.error) { alert(res.error); return; }
+  if (res.error) { uiAlert(res.error, { danger: true }); return; }
   renderInventoryStatus();
-  renderReport();
+  renderReport(true);
   renderScanStats();
+  renderStatusManager();
   let note = `נטענו ${res.added.toLocaleString()} פאות.`;
-  if (res.unknownStatus) note += ` (${res.unknownStatus} עם סטטוס לא מזוהה — סווגו כ-other)`;
+  if (res.hasNames) note += ` (כולל ${res.hasNames.toLocaleString()} שמות)`;
+  if (res.unknownStatus) note += ` — ${res.unknownStatus} סטטוסים חדשים נוספו לרשימת הסטטוסים בהגדרות`;
   $('#importNote').textContent = note;
 }
 
@@ -1871,7 +2137,7 @@ function handleImport(text) {
 async function loadFromSheet(alertOnError) {
   const note = $('#sheetNote');
   const setNote = (color, txt) => { if (note) { note.style.color = color; note.textContent = txt; } };
-  if (!state.sheetUrl) { if (alertOnError) alert('הדביקי קישור לגיליון'); return; }
+  if (!state.sheetUrl) { if (alertOnError) uiAlert('הדביקי קישור לגיליון'); return; }
   if (!state.cloudUrl) { setNote('var(--bad)', 'צריך כתובת שרת (ענן) כדי לטעון מקישור.'); return; }
   setNote('var(--ink-3)', 'טוען מהשיטס…');
   try {
@@ -1884,7 +2150,7 @@ async function loadFromSheet(alertOnError) {
     const text = await r.text();
     const res = importInventory(text);
     if (res.error) throw new Error(res.error);
-    renderInventoryStatus(); renderReport(); renderScanStats();
+    renderInventoryStatus(); renderReport(true); renderScanStats(); renderStatusManager();
     setNote('var(--ok)', `נטענו ${res.added.toLocaleString()} פאות מהשיטס`);
     // share this inventory source with the whole count so other stations auto-load it
     if (alertOnError && cloudEnabled()) {
@@ -1897,7 +2163,7 @@ async function loadFromSheet(alertOnError) {
     }
   } catch (e) {
     setNote('var(--bad)', e.message);
-    if (alertOnError) alert('לא הצלחתי לטעון מהשיטס: ' + e.message);
+    if (alertOnError) uiAlert('לא הצלחתי לטעון מהשיטס: ' + e.message, { danger: true });
   }
 }
 
@@ -1938,5 +2204,5 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
 
 // Expose pure logic for the Node test runner (no effect in the browser).
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { normBarcode, parseCSV, detectColumns, importInventory, reconcile, toCSV, colName, crc32, buildXlsx, state, isInStore, KNOWN_STATUSES };
+  module.exports = { normBarcode, parseCSV, detectColumns, importInventory, reconcile, toCSV, colName, crc32, buildXlsx, state, isInStore, statusOf, effInv, statusLabel, wigName, KNOWN_STATUSES, DEFAULT_STATUSES };
 }

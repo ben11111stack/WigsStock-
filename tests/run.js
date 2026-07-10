@@ -7,7 +7,8 @@
 'use strict';
 
 const app = require('../app.js');
-const { normBarcode, parseCSV, detectColumns, importInventory, reconcile, toCSV, buildXlsx, state } = app;
+const { normBarcode, parseCSV, detectColumns, importInventory, reconcile, toCSV, buildXlsx, state,
+        statusOf, effInv, statusLabel, wigName } = app;
 
 let pass = 0, fail = 0;
 function eq(actual, expected, msg) {
@@ -21,6 +22,8 @@ function ok(cond, msg) { if (cond) pass++; else { fail++; console.error(`✗ ${m
 function resetState() {
   state.inventory = {}; state.scans = {}; state.cloudScans = {};
   state.cloudUrl = ''; state.countId = ''; state.dirty = {};
+  state.statusOverrides = {}; state.statusVocab = null;
+  state.names = {}; state.invNames = {};
 }
 
 /* ---------- normBarcode ---------- */
@@ -86,6 +89,50 @@ eq(parseCSV('﻿a,b'), [['a', 'b']], 'BOM stripped');
   eq(r.ok.length, 1, 'a 1001 scan matches the 01001 sheet row (no false missing/unknown)');
   eq(r.missing.length, 0, 'nothing falsely reported missing');
   eq(r.unknown.length, 0, 'nothing falsely reported unknown');
+})();
+
+/* ---------- status override + effInv ---------- */
+(() => {
+  resetState();
+  importInventory('barcode,status\n01001,in-stock\n01002,sold');
+  // 1002 is sold (not in store); a card override to in-stock should reclassify it
+  state.statusOverrides = { '1002': 'in-stock' };
+  eq(statusOf('1002'), 'in-stock', 'statusOf returns the override, not the sheet value');
+  eq(effInv()['1002'], 'in-stock', 'effInv applies the override');
+  eq(effInv()['1001'], 'in-stock', 'effInv leaves un-overridden wigs untouched');
+  const r = reconcile();
+  eq(r.expectedInStock, 2, 'an override to in-stock adds the wig to expected in-store');
+  eq(r.missing.map(x => x.barcode).sort(), ['1001', '1002'], 'overridden wig now counts as missing until scanned');
+})();
+
+/* ---------- editable status vocabulary ---------- */
+(() => {
+  resetState();
+  importInventory('barcode,status\n01001,in-stock\n01002,consignment');
+  // by default consignment is in-store → both expected
+  eq(reconcile().expectedInStock, 2, 'consignment is in-store by default');
+  // flip consignment to NOT in-store
+  state.statusVocab = app.DEFAULT_STATUSES.map(s => ({ key: s.key, label: s.label, inStore: s.key === 'consignment' ? false : s.inStore }));
+  eq(reconcile().expectedInStock, 1, 'un-flagging consignment drops it from expected in-store');
+})();
+
+/* ---------- auto-added status from the sheet ---------- */
+(() => {
+  resetState();
+  importInventory('barcode,status\n01001,brand-new-status');
+  ok(state.statusVocab && state.statusVocab.some(s => s.key === 'brand-new-status'), 'an unseen sheet status is auto-added to the vocabulary');
+  eq(statusLabel('brand-new-status'), 'brand-new-status', 'a fresh status labels as its key until renamed');
+})();
+
+/* ---------- names ---------- */
+(() => {
+  resetState();
+  const m = detectColumns([['barcode', 'name', 'status'], ['1', 'Bob', 'in-stock']]);
+  eq(m.nameCol, 1, 'detects a name column');
+  importInventory('barcode,name,status\n01001,ליזה,in-stock');
+  eq(wigName('1001'), 'ליזה', 'imports the wig name from the sheet');
+  state.names = { '1001': 'ליזה החדשה' };
+  eq(wigName('1001'), 'ליזה החדשה', 'a local name edit wins over the sheet name');
 })();
 
 /* ---------- toCSV ---------- */
