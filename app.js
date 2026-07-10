@@ -23,8 +23,9 @@ const KNOWN_STATUSES = [
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.5.2';
+const APP_VERSION = '1.5.3';
 const CHANGELOG = [
+  { v: '1.5.3', notes: ['המצלמה משתחררת אוטומטית כשעוברים לאפליקציה אחרת (לא נשארת תפוסה)', 'המצלמה נכבית לבד אחרי 2 דקות ללא סריקה'] },
   { v: '1.5.2', notes: ['תיקון הפלאש בטלפונים עם כמה עדשות — מחפש אוטומטית את העדשה עם הפנס ומדליק אותה', 'מצב הפלאש נקרא מהחומרה (לא "דולק" כשאין אור)'] },
   { v: '1.5.1', notes: ['פתיחת מצלמה עמידה יותר — ניסיון חוזר עם הגדרות פשוטות כשהמצלמה תפוסה', 'הודעות שגיאה ברורות למצלמה (תפוסה / אין הרשאה / אין מצלמה)'] },
   { v: '1.5.0', notes: ['הגדרות ודוחות מסודרים באקורדיונים (מתקפלים)', 'שם הספירה הוסתר (בהגדרות מתקדמות)'] },
@@ -216,6 +217,7 @@ function recordScan(rawCode) {
   showScanFeedback(code, !!existing);
   renderReport();
   renderScanStats();
+  armCameraIdle();   // scanning is activity — push the auto-off back
 }
 
 // Worker-facing feedback is deliberately status-agnostic: a scanned wig just
@@ -282,6 +284,10 @@ function setupScanInput() {
  * (e.g. GitHub Pages) for camera scanning. Hardware scanners work anywhere.
  */
 let cameraOn = false, zxingReader = null, cameraStream = null, scanTimer = null, scanCanvas = null, scanCtx = null;
+// Auto-release the camera so it never stays busy for other apps: stop it after
+// a stretch with no scans, and whenever the app goes to the background.
+let cameraIdleTimer = null, cameraResumeOnVisible = false;
+const CAMERA_IDLE_MS = 120000;   // 2 min with no scan → free the camera
 
 function showCamStart(msg) {
   const s = $('#camStart'); if (s) s.classList.remove('hidden');
@@ -334,6 +340,7 @@ async function startCamera() {
     scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
     scanTick();   // our own decode loop — guarantees frames are actually decoded
     updateFlashButton();
+    armCameraIdle();
   } catch (e) {
     cameraOn = false;
     btn.textContent = '📷';
@@ -410,7 +417,20 @@ function stopCamera() {
   $('#cameraBtn').textContent = '📷';
   const s = $('#camStart'); if (s) s.classList.remove('hidden');
   torchOn = false; torchProbed = false;
+  if (cameraIdleTimer) { clearTimeout(cameraIdleTimer); cameraIdleTimer = null; }
   const fb = $('#flashBtn'); if (fb) { fb.classList.add('hidden'); fb.classList.remove('active'); }
+}
+
+// (Re)start the inactivity countdown. Called when the camera opens and on every
+// scan, so the timer only fires after a real gap with no scanning.
+function armCameraIdle() {
+  if (cameraIdleTimer) { clearTimeout(cameraIdleTimer); cameraIdleTimer = null; }
+  if (!cameraOn) return;
+  cameraIdleTimer = setTimeout(() => {
+    if (!cameraOn) return;
+    stopCamera();
+    showCamStart('המצלמה כובתה אוטומטית עקב חוסר שימוש — הקש/י כדי להפעיל שוב 📷');
+  }, CAMERA_IDLE_MS);
 }
 
 /* Camera flash / torch.
@@ -1008,6 +1028,19 @@ function init() {
   }
   // flush the offline queue the moment the network returns
   window.addEventListener('online', () => { if (cloudEnabled() && Object.keys(state.dirty).length) pushCloud(); });
+
+  // Free the camera whenever the app leaves the foreground (switching to another
+  // app / the phone's camera / another tab), so it never stays busy. Resume it
+  // when we come back, if we're still on the scan tab.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (cameraOn) { cameraResumeOnVisible = true; stopCamera(); }
+    } else if (cameraResumeOnVisible) {
+      cameraResumeOnVisible = false;
+      if (document.querySelector('#panel-scan.active')) ensureCamera();
+    }
+  });
+  window.addEventListener('pagehide', () => { if (cameraOn) stopCamera(); });
 
   // tabs (each switch pushes history so the back button walks tabs, not out of the app)
   $$('nav button').forEach(b => b.addEventListener('click', () => navigate(b.id.replace('tab-', ''))));
