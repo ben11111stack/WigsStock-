@@ -20,7 +20,7 @@
 **הכל committed + pushed לענף `claude/improvements-features-ygud1v`.**
 
 ## ⚠️ פריסה — שים לב
-- `.github/workflows/deploy-pages.yml` מפרס ל-GitHub Pages. **הוספתי את הענף `claude/improvements-features-ygud1v` לטריגר** כדי שהשינויים יעלו לאוויר. שני הענפים מפרסים לאותו אתר Pages (concurrency group `pages`, cancel-in-progress) — הענף שנדחף אחרון מנצח. אם ממזגים לענף הראשי אפשר לצמצם חזרה לענף אחד.
+- **ה-Pages מוגן לפי ענף:** ה-environment `github-pages` מאפשר פריסה **רק מהענף `claude/inventory-barcode-scanner-4w4fbf`** (environment protection rule ברמת ה-repo, לא בקובץ). לכן דחיפה ל-`claude/improvements-features-ygud1v` **לא** מפרסת לאוויר — ניסיון כזה נכשל מיד. **כדי להעלות את גרסה 1.6.0 לאוויר:** או (א) למזג את הענף הזה ל-`claude/inventory-barcode-scanner-4w4fbf` (הוא מפרס אוטומטית), או (ב) לעדכן ב-GitHub → Settings → Environments → github-pages את רשימת הענפים המורשים כך שתכלול את הענף הזה.
 - ה-**Worker** לא נפרס אוטומטית — שינויי `worker/src/worker.js` (הקשחת האבטחה) ייכנסו לתוקף רק אחרי `npx wrangler@3 deploy` ידני עם הטוקן של המשתמש.
 
 ## קישורים
