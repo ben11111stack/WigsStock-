@@ -23,8 +23,14 @@ const KNOWN_STATUSES = [
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.9.0';
 const CHANGELOG = [
+  { v: '1.9.0', notes: [
+    'כרטיס מוצר לכל פאה — הקשה על ברקוד פותחת כרטיס עם סטטוס ופרטים (תשתית לשם/מחיר/היסטוריה בהמשך)',
+    'בחירת צליל סריקה בהגדרות (קלאסי / עדין / סורק / פעמון / שקט)',
+    'עמוד המלאי עוצב מחדש — קומפקטי ומכובד, בלי מסגרות צבע',
+    'תיקון צבעי כפתורים שלא תאמו לערכת הנושא'
+  ] },
   { v: '1.8.0', notes: [
     'בורר ערכות צבע גלובלי בהגדרות (כולל ורוד) + מצב כהה',
     'עמוד המלאי עוצב מחדש — מספר גדול ומכובד ורשימה נקייה, בלי חלונית פנימית',
@@ -84,7 +90,8 @@ const state = {
   batchMode: false,  // show the live recent-scans list on the scan tab
   apiKey: '',        // optional shared secret (only needed if the Worker enforces one)
   accent: '',        // brand accent theme key (see ACCENTS; '' = default)
-  dark: false        // dark appearance
+  dark: false,       // dark appearance
+  sound: ''          // scan sound profile key (see SOUNDS; '' = classic)
 };
 
 /* ---------- Appearance / brand themes ----------
@@ -429,19 +436,33 @@ function showScanFeedback(code, wasDuplicate) {
 }
 let hitTimer = null;
 
-/* Web-Audio beep so workers get audible confirmation without a sound file. */
+/* Web-Audio beep so workers get audible confirmation without a sound file.
+ * Several selectable profiles: an elegant chime, the classic tone, and a sharp
+ * real-scanner blip. Each maps ok/dup/unknown to a note sequence. */
+const SOUNDS = {
+  classic: { name: 'קלאסי', type: 'sine',     dur: .18, gain: .15, ok: [880],       dup: [620],  unknown: [320] },
+  soft:    { name: 'עדין',  type: 'sine',     dur: .22, gain: .12, ok: [659, 988],  dup: [523],  unknown: [294] },
+  scanner: { name: 'סורק',  type: 'square',   dur: .07, gain: .07, ok: [2100],      dup: [1600], unknown: [500] },
+  bell:    { name: 'פעמון', type: 'triangle', dur: .30, gain: .12, ok: [1319, 1760], dup: [988], unknown: [440] },
+  off:     { name: 'שקט', off: true }
+};
+function soundKey() { return SOUNDS[state.sound] ? state.sound : 'classic'; }
 let audioCtx = null;
 function beep(kind) {
+  const s = SOUNDS[soundKey()];
+  if (!s || s.off) return;
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain); gain.connect(audioCtx.destination);
-    const freq = kind === 'ok' ? 880 : kind === 'dup' ? 620 : 320;
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(.15, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime + .18);
-    osc.start(); osc.stop(audioCtx.currentTime + .18);
+    const notes = s[kind] || s.ok;
+    notes.forEach((f, i) => {
+      const t0 = audioCtx.currentTime + i * s.dur * 0.85;
+      const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+      osc.type = s.type; osc.frequency.value = f;
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      gain.gain.setValueAtTime(s.gain, t0);
+      gain.gain.exponentialRampToValueAtTime(.0008, t0 + s.dur);
+      osc.start(t0); osc.stop(t0 + s.dur);
+    });
   } catch (e) {}
 }
 
@@ -912,6 +933,45 @@ function closeLookupScan() {
   const o = $('#scanOverlay'); if (o) o.classList.add('hidden');
 }
 
+/* ---------- Wig product card ----------
+ * Every wig is a product identified by its barcode. Today a wig only carries a
+ * status (in stock or not); this card is the place future per-wig fields (name,
+ * price, history, …) will live. Opened by tapping any barcode. */
+function wigVerdict(bc) {
+  const inInv = bc in state.inventory;
+  const status = inInv ? state.inventory[bc] : null;
+  const scanned = (effectiveScans()[bc] || {}).count || 0;
+  if (!inInv && !scanned) return { cls: 'muted', glyph: 'search', text: 'לא נמצאה', status, scanned, inInv };
+  if (!inInv) return { cls: 'unknown', glyph: 'help', text: 'ברקוד לא מוכר', status, scanned, inInv };
+  if (isInStore(status) && scanned) return { cls: 'ok', glyph: 'check', text: 'תקין — במלאי ונסרקה', status, scanned, inInv };
+  if (isInStore(status) && !scanned) return { cls: 'bad', glyph: 'x', text: 'חסרה — לא נסרקה', status, scanned, inInv };
+  if (!isInStore(status) && scanned) return { cls: 'warn', glyph: 'alert', text: 'בחנות אך מסומנת אחרת', status, scanned, inInv };
+  return { cls: 'muted', glyph: 'info', text: 'לא אמורה בחנות', status, scanned, inInv };
+}
+function openProductCard(bc) {
+  bc = normBarcode(bc);
+  const el = $('#productBody');
+  if (!el || !bc) return;
+  const v = wigVerdict(bc);
+  const d = state.cloudDetail && state.cloudDetail[bc];
+  const field = (label, val) => `<div class="pc-field"><span>${label}</span><b>${val}</b></div>`;
+  el.innerHTML = `
+    <div class="pc-head">
+      <div class="pc-kicker">פאה</div>
+      <div class="pc-bc">${esc(bc)}</div>
+    </div>
+    <div class="pc-verdict ${v.cls}">${ic(v.glyph)} ${esc(v.text)}</div>
+    <div class="pc-fields">
+      ${field('סטטוס בשיטס', v.inInv ? esc(v.status) : '—')}
+      ${field('בחנות', v.inInv && isInStore(v.status) ? 'כן' : 'לא')}
+      ${field('נסרקה', v.scanned ? ('כן · ' + v.scanned + ' פעמים') : 'לא')}
+      ${d && d.station ? field('עמדה', esc(d.station)) : ''}
+    </div>
+    <div class="pc-soon">${ic('info')} שם, מחיר, היסטוריה ופרטים נוספים — בקרוב</div>`;
+  const m = $('#productModal'); if (m) m.classList.remove('hidden');
+}
+function closeProductCard() { const m = $('#productModal'); if (m) m.classList.add('hidden'); }
+
 // Status readout for one specific wig — shown when the search query exactly
 // identifies a barcode (typed or scanned via the search's camera button).
 function lookupCard(query) {
@@ -934,7 +994,7 @@ function lookupCard(query) {
   const d = state.cloudDetail && state.cloudDetail[bc];
   const station = d && d.station ? `<div class="lookup-line">עמדה: <b>${esc(d.station)}</b></div>` : '';
   return `<div class="lookup ${cls}">
-    <div class="lookup-bc">${esc(bc)}</div>
+    <div class="lookup-bc bc-link" data-wig="${esc(bc)}">${esc(bc)}</div>
     <div class="lookup-verdict">${ic(glyph)} ${verdict}</div>
     <div class="lookup-line">סטטוס בשיטס: <b>${inInv ? esc(status) : '—'}</b></div>
     <div class="lookup-line">נסרקה: <b>${scanned ? ('כן · ' + scanned + ' פעמים') : 'לא'}</b></div>
@@ -952,7 +1012,7 @@ function renderReport() {
 
   const q = reportQuery.trim().toLowerCase();
   const filt = (list) => q ? list.filter(i => String(i.barcode).toLowerCase().includes(q)) : list;
-  const bcCol = { label: 'ברקוד', render: i => `<b>${esc(i.barcode)}</b>` };
+  const bcCol = { label: 'ברקוד', render: i => `<b class="bc-link" data-wig="${esc(i.barcode)}">${esc(i.barcode)}</b>` };
   const statusCol = { label: 'סטטוס בשיטס', render: i =>
     `<span class="tag ${isInStore(i.status) ? 'instock' : 'other'}">${esc(i.status)}</span>` };
   const countCol = { label: 'פעמים', render: i => i.count };
@@ -1047,19 +1107,15 @@ function renderInventoryStatus() {
   }
   const counts = {};
   for (const s of Object.values(state.inventory)) counts[s] = (counts[s] || 0) + 1;
-  const inStore = Object.entries(counts).filter(([s]) => isInStore(s)).reduce((a, [, c]) => a + c, 0);
-  const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([s, c]) => {
-    const pct = Math.round(c / n * 100);
-    return `<div class="inv-row">
-      <span class="inv-row-tag"><span class="tag ${isInStore(s) ? 'instock' : 'other'}">${esc(s)}</span></span>
-      <span class="inv-row-bar"><span style="width:${pct}%"></span></span>
-      <span class="inv-row-num">${c.toLocaleString()}</span>
-    </div>`;
-  }).join('');
+  const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([s, c]) =>
+    `<div class="inv-row">
+      <span class="inv-name"><span class="inv-dot ${isInStore(s) ? 'in' : ''}"></span>${esc(s)}</span>
+      <span class="inv-count">${c.toLocaleString()}</span>
+    </div>`).join('');
   el.innerHTML = `
     <div class="inv-hero">
-      <div class="inv-total">${n.toLocaleString()}</div>
-      <div class="inv-total-lbl">פאות במלאי · <b>${inStore.toLocaleString()}</b> אמורות בחנות</div>
+      <span class="inv-total">${n.toLocaleString()}</span>
+      <span class="inv-total-lbl">פאות במלאי</span>
     </div>
     <div class="inv-list">${rows}</div>`;
 }
@@ -1609,6 +1665,9 @@ function init() {
     // per-item quick undo in the batch list
     const bu = e.target.closest('[data-undo-code]');
     if (bu) { unrecordScan(bu.getAttribute('data-undo-code')); return; }
+    // tap a barcode → open its wig product card
+    const wig = e.target.closest('[data-wig]');
+    if (wig) { e.stopPropagation(); openProductCard(wig.getAttribute('data-wig')); return; }
     // per-category export button
     const exp = e.target.closest('[data-export-cat]');
     if (exp) { e.stopPropagation(); exportOne(exp.getAttribute('data-export-cat')); return; }
@@ -1719,6 +1778,14 @@ function init() {
     scanOverlay.addEventListener('click', (e) => { if (e.target === scanOverlay) closeLookupScan(); });
   }
 
+  // wig product card modal: close button + tap-outside to dismiss
+  const productModal = $('#productModal');
+  if (productModal) {
+    const pc = $('#productClose');
+    if (pc) pc.addEventListener('click', closeProductCard);
+    productModal.addEventListener('click', (e) => { if (e.target === productModal) closeProductCard(); });
+  }
+
   // export
   const expExcel = $('#expExcel');
   if (expExcel) expExcel.addEventListener('click', exportExcel);
@@ -1747,9 +1814,10 @@ function init() {
   showTab(start);
 }
 
-// Appearance settings: accent swatches (global) + dark toggle.
+// Appearance settings: accent swatches (global) + dark toggle + scan sound.
 function setupTheme() {
   renderTheme();
+  renderSound();
   const darkEl = $('#darkToggle');
   if (darkEl) {
     darkEl.checked = !!state.dark;
@@ -1765,6 +1833,17 @@ function renderTheme() {
   ).join('');
   wrap.querySelectorAll('[data-accent]').forEach(b => b.addEventListener('click', () => {
     state.accent = b.getAttribute('data-accent'); save(); applyTheme(); renderTheme();
+  }));
+}
+function renderSound() {
+  const wrap = $('#soundPicker');
+  if (!wrap) return;
+  const cur = soundKey();
+  wrap.innerHTML = Object.entries(SOUNDS).map(([k, s]) =>
+    `<button class="sound-opt${k === cur ? ' active' : ''}" data-sound="${k}">${esc(s.name)}</button>`
+  ).join('');
+  wrap.querySelectorAll('[data-sound]').forEach(b => b.addEventListener('click', () => {
+    state.sound = b.getAttribute('data-sound'); save(); renderSound(); beep('ok');   // preview
   }));
 }
 

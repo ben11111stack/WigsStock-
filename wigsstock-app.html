@@ -258,7 +258,7 @@ details summary { cursor: pointer; }
 .scan-input-row .scan-input { flex: 1; text-align: right; font-size: 19px; letter-spacing: 2px; }
 .scan-input-row .scan-input::placeholder { letter-spacing: 0; font-family: inherit; }
 .scan-add { width: auto; flex: none; padding: 0 22px; font-size: 15px; border-radius: var(--r-lg); }
-.icon-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.icon-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 .update-bar {
   border-color: color-mix(in oklab, var(--ok) 40%, var(--line));
   background: color-mix(in oklab, var(--ok) 11%, var(--bg));
@@ -430,19 +430,19 @@ td .ic { width: 15px; height: 15px; }
 .acc-sub .ic { width: 14px; height: 14px; }
 .scan-banner .msg .ic { width: 18px; height: 18px; vertical-align: -.2em; margin-inline-end: 2px; }
 
-/* ---------- Inventory page (big, dignified, no inner scroll box) ---------- */
+/* ---------- Inventory page (compact, dignified, no inner scroll box) ---------- */
 .inv-page { padding: 2px 20px 12px; }
-.inv-hero { padding: 8px 0 18px; }
-.inv-total { font-size: 54px; font-weight: 700; letter-spacing: -.03em; line-height: 1; color: var(--ink); }
-.inv-total-lbl { margin-top: 10px; font-size: 14px; color: var(--ink-3); }
-.inv-total-lbl b { color: var(--ink-2); }
+.inv-hero { display: flex; align-items: baseline; gap: 10px; padding: 4px 0 14px; }
+.inv-total { font-size: 38px; font-weight: 700; letter-spacing: -.02em; line-height: 1; color: var(--ink); }
+.inv-total-lbl { font-size: 14px; color: var(--ink-3); }
 .inv-list { display: flex; flex-direction: column; }
-.inv-row { display: grid; grid-template-columns: minmax(110px, auto) 1fr auto; align-items: center; gap: 16px;
-  padding: 15px 0; border-top: 1px solid var(--line); }
+.inv-row { display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 6px; border-top: 1px solid var(--line); }
 .inv-row:last-child { border-bottom: 1px solid var(--line); }
-.inv-row-num { font-size: 19px; font-weight: 640; color: var(--ink); font-variant-numeric: tabular-nums; }
-.inv-row-bar { height: 6px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
-.inv-row-bar > span { display: block; height: 100%; border-radius: 4px; background: color-mix(in oklab, var(--primary) 55%, var(--line)); }
+.inv-name { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--ink); }
+.inv-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); flex: none; }
+.inv-dot.in { background: var(--ok); }
+.inv-count { font-size: 17px; font-weight: 640; color: var(--ink); font-variant-numeric: tabular-nums; }
 .inv-empty { text-align: center; padding: 46px 20px; }
 .inv-empty-ic .ic { width: 42px; height: 42px; color: var(--ink-3); }
 .inv-empty-title { font-size: 21px; font-weight: 700; margin: 14px 0 6px; color: var(--ink); }
@@ -463,6 +463,43 @@ td .ic { width: 15px; height: 15px; }
   border-radius: 50%; background: #fff; transition: left .2s; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
 .switch:checked { background: var(--primary); }
 .switch:checked::after { left: 22px; }
+
+/* ---------- Scan sound picker ---------- */
+.sound-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.sound-opt { padding: 8px 15px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--ink-2); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.sound-opt:active { transform: scale(.96); }
+.sound-opt.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+/* ---------- Tappable barcode + wig product card ---------- */
+.bc-link { cursor: pointer; border-bottom: 1px dashed color-mix(in oklab, var(--primary) 45%, var(--line)); }
+.bc-link:active { opacity: .6; }
+.modal { position: fixed; inset: 0; z-index: 65; display: flex; align-items: flex-end; justify-content: center;
+  background: color-mix(in oklab, #000 55%, transparent); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.modal.hidden { display: none; }
+.modal-card { position: relative; width: 100%; max-width: var(--maxw); background: var(--bg);
+  border: 1px solid var(--line); border-bottom: none; border-radius: var(--r-xl) var(--r-xl) 0 0;
+  padding: 26px 22px calc(24px + env(safe-area-inset-bottom)); animation: sheet-up .22s ease; }
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.modal-close { position: absolute; top: 14px; inset-inline-start: 14px; }
+.pc-head { text-align: center; padding: 4px 0 16px; }
+.pc-kicker { font-size: 11px; font-weight: 700; letter-spacing: .12em; color: var(--ink-3); }
+.pc-bc { font-family: ui-monospace, monospace; font-size: 34px; font-weight: 700; letter-spacing: 2px; color: var(--ink); margin-top: 6px; }
+.pc-verdict { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 15px; font-weight: 620;
+  padding: 12px; border-radius: var(--r); margin-bottom: 16px; background: var(--surface-2); color: var(--ink-2); }
+.pc-verdict .ic { width: 19px; height: 19px; }
+.pc-verdict.ok { background: color-mix(in oklab, var(--ok) 12%, var(--bg)); color: var(--ok); }
+.pc-verdict.bad { background: color-mix(in oklab, var(--bad) 10%, var(--bg)); color: var(--bad); }
+.pc-verdict.warn, .pc-verdict.unknown { background: color-mix(in oklab, var(--warn) 12%, var(--bg)); color: var(--warn); }
+.pc-fields { display: flex; flex-direction: column; }
+.pc-field { display: flex; justify-content: space-between; align-items: center; padding: 14px 4px;
+  border-top: 1px solid var(--line); font-size: 14px; }
+.pc-field:first-child { border-top: none; }
+.pc-field span { color: var(--ink-3); }
+.pc-field b { color: var(--ink); font-weight: 620; }
+.pc-soon { display: flex; align-items: center; gap: 8px; margin-top: 18px; padding: 13px;
+  border-radius: var(--r); background: var(--surface-2); color: var(--ink-3); font-size: 12.5px; }
+.pc-soon .ic { width: 16px; height: 16px; flex: none; }
 
 /* ---------- Export polish ---------- */
 .btn-lg { height: 54px; font-size: 16px; font-weight: 620; border-radius: var(--r-lg); }
@@ -675,7 +712,7 @@ td .ic { width: 15px; height: 15px; }
     <section id="panel-settings" class="tab">
       <div style="height:6px"></div>
 
-      <div class="acc open">
+      <div class="acc">
         <button class="acc-head">
           <span class="acc-titles"><span class="acc-title"><span data-ic="palette"></span> מראה וצבע</span><span class="acc-sub">ערכת הצבע של האפליקציה</span></span>
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -687,6 +724,8 @@ td .ic { width: 15px; height: 15px; }
             <span>מצב כהה</span>
             <input type="checkbox" id="darkToggle" class="switch">
           </label>
+          <div class="fld-lbl" style="margin-top:20px">צליל סריקה</div>
+          <div id="soundPicker" class="sound-picker"></div>
         </div>
       </div>
 
@@ -800,6 +839,14 @@ td .ic { width: 15px; height: 15px; }
     </div>
   </div>
 
+  <!-- wig product card -->
+  <div id="productModal" class="modal hidden">
+    <div class="modal-card">
+      <button id="productClose" class="icon-btn modal-close" title="סגור" data-ic="close"></button>
+      <div id="productBody"></div>
+    </div>
+  </div>
+
   <nav class="bottomnav">
     <button id="tab-load">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
@@ -854,8 +901,14 @@ const KNOWN_STATUSES = [
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.9.0';
 const CHANGELOG = [
+  { v: '1.9.0', notes: [
+    'כרטיס מוצר לכל פאה — הקשה על ברקוד פותחת כרטיס עם סטטוס ופרטים (תשתית לשם/מחיר/היסטוריה בהמשך)',
+    'בחירת צליל סריקה בהגדרות (קלאסי / עדין / סורק / פעמון / שקט)',
+    'עמוד המלאי עוצב מחדש — קומפקטי ומכובד, בלי מסגרות צבע',
+    'תיקון צבעי כפתורים שלא תאמו לערכת הנושא'
+  ] },
   { v: '1.8.0', notes: [
     'בורר ערכות צבע גלובלי בהגדרות (כולל ורוד) + מצב כהה',
     'עמוד המלאי עוצב מחדש — מספר גדול ומכובד ורשימה נקייה, בלי חלונית פנימית',
@@ -915,7 +968,8 @@ const state = {
   batchMode: false,  // show the live recent-scans list on the scan tab
   apiKey: '',        // optional shared secret (only needed if the Worker enforces one)
   accent: '',        // brand accent theme key (see ACCENTS; '' = default)
-  dark: false        // dark appearance
+  dark: false,       // dark appearance
+  sound: ''          // scan sound profile key (see SOUNDS; '' = classic)
 };
 
 /* ---------- Appearance / brand themes ----------
@@ -1260,19 +1314,33 @@ function showScanFeedback(code, wasDuplicate) {
 }
 let hitTimer = null;
 
-/* Web-Audio beep so workers get audible confirmation without a sound file. */
+/* Web-Audio beep so workers get audible confirmation without a sound file.
+ * Several selectable profiles: an elegant chime, the classic tone, and a sharp
+ * real-scanner blip. Each maps ok/dup/unknown to a note sequence. */
+const SOUNDS = {
+  classic: { name: 'קלאסי', type: 'sine',     dur: .18, gain: .15, ok: [880],       dup: [620],  unknown: [320] },
+  soft:    { name: 'עדין',  type: 'sine',     dur: .22, gain: .12, ok: [659, 988],  dup: [523],  unknown: [294] },
+  scanner: { name: 'סורק',  type: 'square',   dur: .07, gain: .07, ok: [2100],      dup: [1600], unknown: [500] },
+  bell:    { name: 'פעמון', type: 'triangle', dur: .30, gain: .12, ok: [1319, 1760], dup: [988], unknown: [440] },
+  off:     { name: 'שקט', off: true }
+};
+function soundKey() { return SOUNDS[state.sound] ? state.sound : 'classic'; }
 let audioCtx = null;
 function beep(kind) {
+  const s = SOUNDS[soundKey()];
+  if (!s || s.off) return;
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain); gain.connect(audioCtx.destination);
-    const freq = kind === 'ok' ? 880 : kind === 'dup' ? 620 : 320;
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(.15, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime + .18);
-    osc.start(); osc.stop(audioCtx.currentTime + .18);
+    const notes = s[kind] || s.ok;
+    notes.forEach((f, i) => {
+      const t0 = audioCtx.currentTime + i * s.dur * 0.85;
+      const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+      osc.type = s.type; osc.frequency.value = f;
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      gain.gain.setValueAtTime(s.gain, t0);
+      gain.gain.exponentialRampToValueAtTime(.0008, t0 + s.dur);
+      osc.start(t0); osc.stop(t0 + s.dur);
+    });
   } catch (e) {}
 }
 
@@ -1743,6 +1811,45 @@ function closeLookupScan() {
   const o = $('#scanOverlay'); if (o) o.classList.add('hidden');
 }
 
+/* ---------- Wig product card ----------
+ * Every wig is a product identified by its barcode. Today a wig only carries a
+ * status (in stock or not); this card is the place future per-wig fields (name,
+ * price, history, …) will live. Opened by tapping any barcode. */
+function wigVerdict(bc) {
+  const inInv = bc in state.inventory;
+  const status = inInv ? state.inventory[bc] : null;
+  const scanned = (effectiveScans()[bc] || {}).count || 0;
+  if (!inInv && !scanned) return { cls: 'muted', glyph: 'search', text: 'לא נמצאה', status, scanned, inInv };
+  if (!inInv) return { cls: 'unknown', glyph: 'help', text: 'ברקוד לא מוכר', status, scanned, inInv };
+  if (isInStore(status) && scanned) return { cls: 'ok', glyph: 'check', text: 'תקין — במלאי ונסרקה', status, scanned, inInv };
+  if (isInStore(status) && !scanned) return { cls: 'bad', glyph: 'x', text: 'חסרה — לא נסרקה', status, scanned, inInv };
+  if (!isInStore(status) && scanned) return { cls: 'warn', glyph: 'alert', text: 'בחנות אך מסומנת אחרת', status, scanned, inInv };
+  return { cls: 'muted', glyph: 'info', text: 'לא אמורה בחנות', status, scanned, inInv };
+}
+function openProductCard(bc) {
+  bc = normBarcode(bc);
+  const el = $('#productBody');
+  if (!el || !bc) return;
+  const v = wigVerdict(bc);
+  const d = state.cloudDetail && state.cloudDetail[bc];
+  const field = (label, val) => `<div class="pc-field"><span>${label}</span><b>${val}</b></div>`;
+  el.innerHTML = `
+    <div class="pc-head">
+      <div class="pc-kicker">פאה</div>
+      <div class="pc-bc">${esc(bc)}</div>
+    </div>
+    <div class="pc-verdict ${v.cls}">${ic(v.glyph)} ${esc(v.text)}</div>
+    <div class="pc-fields">
+      ${field('סטטוס בשיטס', v.inInv ? esc(v.status) : '—')}
+      ${field('בחנות', v.inInv && isInStore(v.status) ? 'כן' : 'לא')}
+      ${field('נסרקה', v.scanned ? ('כן · ' + v.scanned + ' פעמים') : 'לא')}
+      ${d && d.station ? field('עמדה', esc(d.station)) : ''}
+    </div>
+    <div class="pc-soon">${ic('info')} שם, מחיר, היסטוריה ופרטים נוספים — בקרוב</div>`;
+  const m = $('#productModal'); if (m) m.classList.remove('hidden');
+}
+function closeProductCard() { const m = $('#productModal'); if (m) m.classList.add('hidden'); }
+
 // Status readout for one specific wig — shown when the search query exactly
 // identifies a barcode (typed or scanned via the search's camera button).
 function lookupCard(query) {
@@ -1765,7 +1872,7 @@ function lookupCard(query) {
   const d = state.cloudDetail && state.cloudDetail[bc];
   const station = d && d.station ? `<div class="lookup-line">עמדה: <b>${esc(d.station)}</b></div>` : '';
   return `<div class="lookup ${cls}">
-    <div class="lookup-bc">${esc(bc)}</div>
+    <div class="lookup-bc bc-link" data-wig="${esc(bc)}">${esc(bc)}</div>
     <div class="lookup-verdict">${ic(glyph)} ${verdict}</div>
     <div class="lookup-line">סטטוס בשיטס: <b>${inInv ? esc(status) : '—'}</b></div>
     <div class="lookup-line">נסרקה: <b>${scanned ? ('כן · ' + scanned + ' פעמים') : 'לא'}</b></div>
@@ -1783,7 +1890,7 @@ function renderReport() {
 
   const q = reportQuery.trim().toLowerCase();
   const filt = (list) => q ? list.filter(i => String(i.barcode).toLowerCase().includes(q)) : list;
-  const bcCol = { label: 'ברקוד', render: i => `<b>${esc(i.barcode)}</b>` };
+  const bcCol = { label: 'ברקוד', render: i => `<b class="bc-link" data-wig="${esc(i.barcode)}">${esc(i.barcode)}</b>` };
   const statusCol = { label: 'סטטוס בשיטס', render: i =>
     `<span class="tag ${isInStore(i.status) ? 'instock' : 'other'}">${esc(i.status)}</span>` };
   const countCol = { label: 'פעמים', render: i => i.count };
@@ -1878,19 +1985,15 @@ function renderInventoryStatus() {
   }
   const counts = {};
   for (const s of Object.values(state.inventory)) counts[s] = (counts[s] || 0) + 1;
-  const inStore = Object.entries(counts).filter(([s]) => isInStore(s)).reduce((a, [, c]) => a + c, 0);
-  const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([s, c]) => {
-    const pct = Math.round(c / n * 100);
-    return `<div class="inv-row">
-      <span class="inv-row-tag"><span class="tag ${isInStore(s) ? 'instock' : 'other'}">${esc(s)}</span></span>
-      <span class="inv-row-bar"><span style="width:${pct}%"></span></span>
-      <span class="inv-row-num">${c.toLocaleString()}</span>
-    </div>`;
-  }).join('');
+  const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([s, c]) =>
+    `<div class="inv-row">
+      <span class="inv-name"><span class="inv-dot ${isInStore(s) ? 'in' : ''}"></span>${esc(s)}</span>
+      <span class="inv-count">${c.toLocaleString()}</span>
+    </div>`).join('');
   el.innerHTML = `
     <div class="inv-hero">
-      <div class="inv-total">${n.toLocaleString()}</div>
-      <div class="inv-total-lbl">פאות במלאי · <b>${inStore.toLocaleString()}</b> אמורות בחנות</div>
+      <span class="inv-total">${n.toLocaleString()}</span>
+      <span class="inv-total-lbl">פאות במלאי</span>
     </div>
     <div class="inv-list">${rows}</div>`;
 }
@@ -2440,6 +2543,9 @@ function init() {
     // per-item quick undo in the batch list
     const bu = e.target.closest('[data-undo-code]');
     if (bu) { unrecordScan(bu.getAttribute('data-undo-code')); return; }
+    // tap a barcode → open its wig product card
+    const wig = e.target.closest('[data-wig]');
+    if (wig) { e.stopPropagation(); openProductCard(wig.getAttribute('data-wig')); return; }
     // per-category export button
     const exp = e.target.closest('[data-export-cat]');
     if (exp) { e.stopPropagation(); exportOne(exp.getAttribute('data-export-cat')); return; }
@@ -2550,6 +2656,14 @@ function init() {
     scanOverlay.addEventListener('click', (e) => { if (e.target === scanOverlay) closeLookupScan(); });
   }
 
+  // wig product card modal: close button + tap-outside to dismiss
+  const productModal = $('#productModal');
+  if (productModal) {
+    const pc = $('#productClose');
+    if (pc) pc.addEventListener('click', closeProductCard);
+    productModal.addEventListener('click', (e) => { if (e.target === productModal) closeProductCard(); });
+  }
+
   // export
   const expExcel = $('#expExcel');
   if (expExcel) expExcel.addEventListener('click', exportExcel);
@@ -2578,9 +2692,10 @@ function init() {
   showTab(start);
 }
 
-// Appearance settings: accent swatches (global) + dark toggle.
+// Appearance settings: accent swatches (global) + dark toggle + scan sound.
 function setupTheme() {
   renderTheme();
+  renderSound();
   const darkEl = $('#darkToggle');
   if (darkEl) {
     darkEl.checked = !!state.dark;
@@ -2596,6 +2711,17 @@ function renderTheme() {
   ).join('');
   wrap.querySelectorAll('[data-accent]').forEach(b => b.addEventListener('click', () => {
     state.accent = b.getAttribute('data-accent'); save(); applyTheme(); renderTheme();
+  }));
+}
+function renderSound() {
+  const wrap = $('#soundPicker');
+  if (!wrap) return;
+  const cur = soundKey();
+  wrap.innerHTML = Object.entries(SOUNDS).map(([k, s]) =>
+    `<button class="sound-opt${k === cur ? ' active' : ''}" data-sound="${k}">${esc(s.name)}</button>`
+  ).join('');
+  wrap.querySelectorAll('[data-sound]').forEach(b => b.addEventListener('click', () => {
+    state.sound = b.getAttribute('data-sound'); save(); renderSound(); beep('ok');   // preview
   }));
 }
 
