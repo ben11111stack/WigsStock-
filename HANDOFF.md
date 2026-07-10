@@ -1,7 +1,66 @@
 # WigsStock · Handoff (למפתח/סשן הבא)
 
 אפליקציית **ספירת מלאי פאות** עם סריקת ברקוד, סנכרון ענן בין עמדות, וקריאה/כתיבה מול Google Sheets.
-המסמך הזה מסכם את כל מה שצריך כדי להמשיך. **סטטוס: פרודוקשן, גרסה 1.6.0.**
+המסמך הזה מסכם את כל מה שצריך כדי להמשיך. **סטטוס: פרודוקשן. חי באוויר: 1.9.0. בעבודה: 1.10.0 (WIP).**
+
+## 🚧 עבודה בתהליך — לסיים בסשן הבא (מצב נכון ל-committed WIP)
+
+**חי באוויר = 1.9.0** (ענף `claude/inventory-barcode-scanner-4w4fbf`, cache v15). ענף העבודה
+`claude/improvements-features-ygud1v` מכיל **קומיט WIP אחד מעל 1.9.0** עם *תשתית נתונים בלבד* (תואמת לאחור,
+לא נפרסה). ה-WIP לא שינה UX — בטוח. **לא למזג לענף הפריסה עד שהמשימות למטה גמורות ונבדקו.**
+
+### הרקע — בקשות המשתמשת (בן/יעל, benzi.naor@gmail.com), עברית, פרודקשן:
+1. להפסיק "סטטוס בשיטס"/"מהשיטס" → פשוט **"סטטוס"** בכל טקסט משתמש (זה פרודקשן, לא לחשוף שזה מגיע מגיליון).
+2. **באג גלילה בדוחות:** פותחים אקורדיון (למשל "חסרות"), מתחילים לגלול — הוא נסגר/קופץ.
+   *שורש הבעיה:* ה-polling (`pullCloud` כל 4ש' → `renderReport`) בונה מחדש את `#reportBody.innerHTML`
+   ומאפס את מצב הפתיחה של האקורדיונים.
+3. שורות הדוח (בעיקר "חסרות") יציגו **שם הפאה + כל הפרטים**, לא רק ברקוד.
+4. **כרטיס המוצר:** שם הפאה **ליד** הברקוד למעלה (אותו גודל, לא קטן-מעל-גדול), **ניתן לעריכה**;
+   השדה ייקרא **"סטטוס"** (לא "בשיטס") ו**ניתן לשנות אותו מתוך הכרטיס**.
+5. **אזור בהגדרות להגדרת סטטוסים** — רשימת הסטטוסים + מה נחשב "בחנות".
+
+### ✅ מה כבר עשוי ב-WIP (app.js, תשתית — backward compatible):
+- שדות state חדשים: `names{}` (bc→שם, ברירת מחדל "פאה"), `statusEdit{}` (bc→override סטטוס),
+  `statuses[]` (אוצר-מילים; ריק=ברירת מחדל), `inStore[]` (מה בחנות; ריק=ברירת מחדל).
+- מודל סטטוס גמיש: `DEFAULT_STATUSES`, `DEFAULT_IN_STORE`, `statusVocab()`, `inStoreList()`,
+  `isInStore()` קורא מ-`inStoreList()`. `KNOWN_STATUSES` הוסר (import משתמש ב-`statusVocab()`).
+- עוזרים חדשים: `wigName(bc)`, `statusOf(bc)` (override קודם, אז inventory), `effInv()` (inventory ממוזג עם statusEdit).
+- `reconcile()` משתמש ב-`effInv()`. `module.exports` עודכן (`statusVocab` במקום `KNOWN_STATUSES`).
+- **36 בדיקות עוברות, אין שגיאות runtime.**
+
+### ⏳ מה נשאר (מדויק, לפי משימה — חפש `grep "בשיטס\|מהשיטס"`):
+- **D1 (טרמינולוגיה):** להחליף "סטטוס בשיטס"→"סטטוס" ב: `statusCol.label` (renderReport), כותרת `acc-status`
+  ('פילוח לפי סטטוס בשיטס'→'פילוח לפי סטטוס'), שדה כרטיס המוצר, ו-`lookupCard`. לעבור על כל `בשיטס/מהשיטס`
+  בטקסט משתמש (להשאיר את שם סעיף "מלאי מגוגל שיטס"/"כתיבה חזרה לשיטס" בהגדרות — זה קונפיג אמיתי).
+- **D2 (באג גלילה):** ב-`renderReport()` להוסיף (א) **signature-skip** — לחשב חתימה מהתוצאות
+  (`totalScanned|ok|missing|foundOther|unknown|dup|reportQuery|cloudDevices|invLen`), ואם זהה לקודמת ואין `force` — `return` בלי לבנות DOM; **וגם** (ב) לשמר מצב פתוח: `Set` מודולרי `reportOpen` שמתעדכן ב-toggle-handler
+  (רק לאקורדיונים בתוך `#reportBody`, לפי id של העוטף `acc-*`), ואחרי הבנייה להוסיף `.open` למי שב-Set.
+  (ה-signature-skip לבד פותר את רוב הבעיה כי ה-poll לא יבנה מחדש כשאין שינוי.)
+- **D3 (סיום מיגרציה):** להעביר ל-`effInv()`/`statusOf()`/`Object.values(effInv())` את:
+  `statusBreakdownTable`, `renderInventoryStatus` (counts), `wigVerdict`, `lookupCard`, `dataReconciliation`
+  (כל `state.inventory[bc]` ו-`bc in state.inventory`). **הערה:** תצוגות עדיין קוראות `state.inventory` ישירות —
+  עובד, אבל לא מכבד statusEdit עד שיומר.
+- **D4 (שורות עשירות):** להוסיף `wigCol` (שם `wigName(bc)` + ברקוד, `.bc-link data-wig`) ולהחליף `bcCol`
+  בטבלאות הקטגוריות; "חסרות" → `[wigCol, statusCol]`.
+- **D5 (כרטיס):** `pc-head` — שם ליד ברקוד באותו גודל, שם ניתן לעריכה (tap→prompt→`state.names[bc]`, save,
+  re-render). שדה "סטטוס" → `<select>` מ-`statusVocab()`, change → `state.statusEdit[bc]`, save,
+  `renderReport()`+`renderInventoryStatus()`+`openProductCard(bc)` מחדש. לחווט מאזינים אחרי הבנייה (הכרטיס נבנה מחדש).
+- **D6 (מנהל סטטוסים):** סעיף הגדרות חדש "סטטוסים": `renderStatuses()` שמציג את `statusVocab()` עם toggle
+  "בחנות" (state.inStore) + מחיקה, ושדה הוספה. לאתחל `state.statuses` מ-`DEFAULT_STATUSES` בהוספה ראשונה.
+- **D7 (פריסה):** build-single + tests + screenshots headless, במפ `APP_VERSION`→1.10.0 ו-`sw.js` CACHE→v16,
+  commit, **merge ל-`claude/inventory-barcode-scanner-4w4fbf`** (fast-forward), push → Pages מפרס, אמת חי.
+
+### הערות מימוש חשובות:
+- **פונקציות אינן על `window`** (const/function ב-classic script). בבדיקות Playwright: לטעון מלאי דרך ה-UI
+  (הגדרות → "מלאי מגוגל שיטס" → details "טעינה ידנית" → `#invPaste` → `#invPasteBtn`), ולבדוק state דרך
+  `localStorage.getItem('wigsstock_v1')`.
+- **Chromium ל-headless:** `/opt/pw-browsers/chromium_headless_shell-*/chrome-linux/headless_shell`
+  (ה-`chromium/chrome` הרגיל נכשל — old-headless הוסר). `playwright-core@1.48` מותקן ב-scratchpad.
+- אנימציית פתיחה מהלוגו — המשתמשת מכינה בסשן אחר; להשאיר מקום לשילוב.
+
+---
+
+## מצב יציב אחרון (1.9.0) — למטה תיעוד היסטורי (חלק מהגרסאות)
 
 ## ✅ מצב הענן (10/07/2026) — תקין
 ה-Worker חי ותקין: `curl https://wigsstock-sync.benzi-naor.workers.dev/api/health` → `{"ok":true,"service":"wigsstock-sync"}`.

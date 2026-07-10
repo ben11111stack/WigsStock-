@@ -9,15 +9,29 @@
 
 'use strict';
 
-/* ---------- Status model ---------- */
-// Statuses that mean "should physically be in the store" (treated as in-stock).
+/* ---------- Status model ----------
+ * The status vocabulary and which statuses count as "in store" are configurable
+ * in Settings (state.statuses / state.inStore); these are the defaults. */
 const IN_STOCK = 'in-stock';
-const IN_STORE_STATUSES = ['in-stock', 'consignment'];
-function isInStore(status) { return IN_STORE_STATUSES.includes(status); }
-const KNOWN_STATUSES = [
+const DEFAULT_STATUSES = [
   'barter', 'consignment', 'fix-return', 'in-stock', 'inventory-reserved',
   'missing', 'other', 'personal-use', 'returned', 'sold', 'wish-list'
 ];
+const DEFAULT_IN_STORE = ['in-stock', 'consignment'];
+function statusVocab() { return (state.statuses && state.statuses.length) ? state.statuses : DEFAULT_STATUSES; }
+function inStoreList() { return (state.inStore && state.inStore.length) ? state.inStore : DEFAULT_IN_STORE; }
+function isInStore(status) { return inStoreList().includes(status); }
+
+/* Per-wig data. Today a wig carries a status; names and manual status edits are
+ * local overrides that win over (and survive) sheet reloads. */
+function wigName(bc) { return (state.names && state.names[bc]) || 'פאה'; }
+function statusOf(bc) { return (state.statusEdit && bc in state.statusEdit) ? state.statusEdit[bc] : state.inventory[bc]; }
+function effInv() {
+  if (!state.statusEdit || !Object.keys(state.statusEdit).length) return state.inventory;
+  const out = Object.assign({}, state.inventory);
+  for (const bc in state.statusEdit) out[bc] = state.statusEdit[bc];
+  return out;
+}
 
 // Deployed cloud backend — used by default so the app syncs out of the box.
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
@@ -91,7 +105,11 @@ const state = {
   apiKey: '',        // optional shared secret (only needed if the Worker enforces one)
   accent: '',        // brand accent theme key (see ACCENTS; '' = default)
   dark: false,       // dark appearance
-  sound: ''          // scan sound profile key (see SOUNDS; '' = classic)
+  sound: '',         // scan sound profile key (see SOUNDS; '' = classic)
+  names: {},         // barcode -> custom wig name (default "פאה")
+  statusEdit: {},    // barcode -> manual status override (wins over inventory)
+  statuses: [],      // configurable status vocabulary ('' -> default list)
+  inStore: []        // statuses that count as "in store" ('' -> default)
 };
 
 /* ---------- Appearance / brand themes ----------
@@ -257,7 +275,7 @@ function importInventory(text) {
     const barcode = normBarcode(r[map.barcodeCol] || '');
     let status = (r[map.statusCol] || '').trim().toLowerCase();
     if (!barcode) continue;
-    if (!KNOWN_STATUSES.includes(status)) {
+    if (!statusVocab().includes(status)) {
       // keep it but flag – unknown/blank statuses are treated as "other"
       if (status) unknownStatus++;
       status = status || 'other';
@@ -288,7 +306,7 @@ function effectiveScans() {
 }
 
 function reconcile() {
-  const inv = state.inventory, scans = effectiveScans();
+  const inv = effInv(), scans = effectiveScans();
   const invKeys = Object.keys(inv);
   const scanKeys = Object.keys(scans);
 
@@ -1938,5 +1956,5 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
 
 // Expose pure logic for the Node test runner (no effect in the browser).
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { normBarcode, parseCSV, detectColumns, importInventory, reconcile, toCSV, colName, crc32, buildXlsx, state, isInStore, KNOWN_STATUSES };
+  module.exports = { normBarcode, parseCSV, detectColumns, importInventory, reconcile, toCSV, colName, crc32, buildXlsx, state, isInStore, statusVocab };
 }
