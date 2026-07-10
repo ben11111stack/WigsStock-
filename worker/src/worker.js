@@ -76,13 +76,17 @@ async function maybeWriteback(env, countId) {
   } catch (e) { /* cron will catch up */ }
 }
 
-// Push a count's results to the owner's Apps Script web app.
-async function doWriteback(env, countId, scriptUrl) {
+// Push a count's results to the owner's Apps Script web app. `fields` carries
+// editable per-wig values (name/status) supplied by the writing device on a
+// manual write-back; the cron/auto path sends scans only.
+async function doWriteback(env, countId, scriptUrl, fields) {
   const scans = await aggregateScans(env, countId);
+  const body = { scans };
+  if (fields && Object.keys(fields).length) body.fields = fields;
   const r = await fetch(scriptUrl, {
     method: 'POST', redirect: 'follow',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scans })
+    body: JSON.stringify(body)
   });
   const text = await r.text();
   try { return JSON.parse(text); }
@@ -158,7 +162,7 @@ export default {
           scriptUrl = m && m.script_url ? m.script_url : '';
         }
         if (!/^https:\/\/script\.google\.com\//.test(scriptUrl)) return json({ error: 'only Apps Script (script.google.com) URLs are allowed' }, 400);
-        const result = await doWriteback(env, countId, scriptUrl);
+        const result = await doWriteback(env, countId, scriptUrl, body.fields);
         return json(result, result && result.ok ? 200 : 502);
       }
 

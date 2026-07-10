@@ -54,8 +54,15 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.10.0';
+const APP_VERSION = '1.11.0';
 const CHANGELOG = [
+  { v: '1.11.0', notes: [
+    'פתיח לוגו מונפש בכל פתיחת אפליקציה',
+    'הלוגו הקטן למעלה מונפש כל הזמן — לחיצה עליו פותחת את הפתיח המלא',
+    'מתג בהגדרות לכיבוי תנועת הלוגו הקטן (הפתיח עצמו תמיד פועל)',
+    'כתיבה חזרה לשיטס כוללת עכשיו גם עמודת שם (ושינויי סטטוס מהכרטיס)',
+    'כפתור "הזן" במסך הסריקה (במקום "רשום")'
+  ] },
   { v: '1.10.0', notes: [
     'כרטיס הפאה: שם ליד הברקוד (ניתן לעריכה) וסטטוס שניתן לשנות ישירות מהכרטיס',
     'ניהול סטטוסים בהגדרות — שם לכל סטטוס וסימון מה נחשב "בחנות"; סטטוסים חדשים מהשיטס נוספים לבד',
@@ -134,7 +141,8 @@ const state = {
   names: {},         // barcode -> wig name typed in the app (local, wins over the sheet)
   invNames: {},      // barcode -> wig name read from the sheet's name column (if any)
   statusOverrides: {}, // barcode -> status changed from the wig card (survives sheet reload)
-  statusVocab: null  // user-edited status vocabulary ([{key,label,inStore}]); null = defaults
+  statusVocab: null, // user-edited status vocabulary ([{key,label,inStore}]); null = defaults
+  logoAnim: true     // constant motion of the small header logo (splash always plays regardless)
 };
 
 /* ---------- Per-wig helpers ----------
@@ -1760,6 +1768,16 @@ function init() {
   load();
   applyTheme();
 
+  // opening logo reveal — plays on every launch; header logo replays it and
+  // animates continuously (its motion is toggleable in Settings). Wire + play
+  // early so it dismisses even if later setup throws.
+  applyLogoAnim();
+  const splash = $('#splash');
+  if (splash) splash.addEventListener('click', dismissSplash);
+  const hdrLogo = $('#hdrLogo');
+  if (hdrLogo) hdrLogo.addEventListener('click', playSplash);
+  playSplash();
+
   // paint all static [data-ic] placeholders from the one icon set
   $$('[data-ic]').forEach(el => { el.innerHTML = ic(el.getAttribute('data-ic')); });
 
@@ -2008,7 +2026,38 @@ function init() {
   showTab(start);
 }
 
-// Appearance settings: accent swatches (global) + dark toggle + scan sound.
+/* ---------- Opening logo reveal (splash) ----------
+ * The full-screen reveal plays on every app open and whenever the header logo
+ * is tapped. The small header logo also animates continuously; that constant
+ * motion (only) can be turned off in Settings via state.logoAnim — the splash
+ * itself always plays. */
+const SPLASH_SPARK =
+  '<svg viewBox="0 0 100 100"><defs><radialGradient id="spg" cx="50%" cy="50%" r="50%">' +
+  '<stop offset="0%" stop-color="#fffbe9"/><stop offset="55%" stop-color="#f4d9a6"/>' +
+  '<stop offset="100%" stop-color="#e7c99b" stop-opacity="0"/></radialGradient></defs>' +
+  '<path d="M50 4 C54 34 66 46 96 50 C66 54 54 66 50 96 C46 66 34 54 4 50 C34 46 46 34 50 4 Z" fill="url(#spg)"/>' +
+  '<circle cx="50" cy="50" r="6" fill="#fffdf5"/></svg>';
+let splashTimer = null;
+function playSplash() {
+  const sp = $('#splash'); if (!sp) return;
+  sp.querySelectorAll('.sp-spark').forEach(s => { if (!s.innerHTML) s.innerHTML = SPLASH_SPARK; });
+  clearTimeout(splashTimer);
+  sp.classList.remove('hidden', 'done', 'run');
+  void sp.offsetWidth;                 // reflow so the CSS animations restart on replay
+  sp.classList.add('run');
+  splashTimer = setTimeout(dismissSplash, 2700);
+}
+function dismissSplash() {
+  const sp = $('#splash'); if (!sp) return;
+  clearTimeout(splashTimer);
+  sp.classList.add('done');
+  setTimeout(() => { sp.classList.add('hidden'); sp.classList.remove('run'); }, 520);
+}
+function applyLogoAnim() {
+  const el = $('#hdrLogo'); if (el) el.classList.toggle('no-anim', state.logoAnim === false);
+}
+
+// Appearance settings: accent swatches (global) + dark toggle + scan sound + logo motion.
 function setupTheme() {
   renderTheme();
   renderSound();
@@ -2017,6 +2066,11 @@ function setupTheme() {
   if (darkEl) {
     darkEl.checked = !!state.dark;
     darkEl.addEventListener('change', () => { state.dark = darkEl.checked; save(); applyTheme(); });
+  }
+  const logoEl = $('#logoAnimToggle');
+  if (logoEl) {
+    logoEl.checked = state.logoAnim !== false;
+    logoEl.addEventListener('change', () => { state.logoAnim = logoEl.checked; save(); applyLogoAnim(); });
   }
 }
 
@@ -2178,8 +2232,21 @@ async function registerScriptUrl() {
   } catch (e) { /* non-fatal */ }
 }
 
+// Editable per-wig fields (name + status change) this device knows about, to
+// write into the sheet alongside the scan columns. Names come from in-app edits
+// or the sheet's own name column; status only when it was changed from a card.
+function writebackFields() {
+  const fields = {};
+  const add = (bc, k, v) => { if (v) { (fields[bc] = fields[bc] || {})[k] = v; } };
+  for (const bc in state.names) add(bc, 'name', state.names[bc]);
+  for (const bc in state.invNames) if (!(fields[bc] && fields[bc].name)) add(bc, 'name', state.invNames[bc]);
+  for (const bc in state.statusOverrides) add(bc, 'status', state.statusOverrides[bc]);
+  return fields;
+}
+
 // Write results back to the sheet now. The Worker pulls the authoritative
 // scans (all stations) from the cloud, so it never depends on this device.
+// Names/status edits are attached from this device (see writebackFields).
 async function writeToSheet() {
   const note = $('#writeNote');
   const setNote = (c, t) => { if (note) { note.style.color = c; note.textContent = t; } };
@@ -2190,11 +2257,12 @@ async function writeToSheet() {
     await registerScriptUrl();   // also turns on auto-write from now on
     const r = await fetch(cloudBase() + '/api/writeback', {
       method: 'POST', headers: cloudHeaders(),
-      body: JSON.stringify({ script_url: state.writeUrl, count_id: state.countId })
+      body: JSON.stringify({ script_url: state.writeUrl, count_id: state.countId, fields: writebackFields() })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) throw new Error(j.error || ('שגיאה ' + r.status));
-    setNote('var(--ok)', `נכתב לשיטס — ${j.written} פאות (עמודות: נסרק / תאריך / עמדה). מכאן זה נכתב אוטומטית.`);
+    const nm = j.names ? ` · ${j.names} שמות` : '';
+    setNote('var(--ok)', `נכתב לשיטס — ${j.written} פאות (נסרק / תאריך / עמדה / שם${nm}). מכאן זה נכתב אוטומטית.`);
   } catch (e) {
     setNote('var(--bad)', e.message);
   }

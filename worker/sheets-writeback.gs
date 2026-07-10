@@ -14,18 +14,28 @@
  *   4. WigsStock app → מלאי → "כתיבה לשיטס", paste that URL.
  *      Once set, the results are written automatically (~every 2 min).
  *
- * It ONLY adds/updates three columns — "נסרק" (count), "תאריך סריקה"
- * (last scan time) and "עמדה" (stations). It never changes your
- * original barcode/status columns.
+ * Columns it maintains (adds them if missing; never touches your original
+ * barcode/status columns):
+ *   - "נסרק" (count), "תאריך סריקה" (last scan time), "עמדה" (stations)
+ *   - "שם" (wig name) — written from names typed in the app; if your sheet
+ *     already has a name column it updates that one. Only non-empty names are
+ *     written, so existing names are never blanked.
+ *   - "סטטוס (עודכן)" — a status changed from a wig card in the app. Written to
+ *     a SEPARATE column so your original status column stays intact.
+ *
+ * Adding another column later is a one-liner: pick the value out of
+ * fields[bc] and push it like the name/status blocks below.
  */
 
 var SHEET_ID = '17Sem_IwgporhMsXEhVvW7ysIamzc_Ktxv-7molhp35k';
 var BARCODE_HINTS = ['barcode', 'ברקוד', 'קוד', 'code', 'מספר', 'number', 'sku', 'id', 'פאה', 'wig'];
+var NAME_HINTS = ['שם', 'name', 'דגם', 'model', 'תיאור', 'description', 'כותרת', 'title'];
 
 function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents || '{}');
-    var scans = body.scans || {};   // { barcode: { count, last(ms), station } }
+    var scans = body.scans || {};    // { barcode: { count, last(ms), station } }
+    var fields = body.fields || {};  // { barcode: { name, status } }  (editable per-wig fields)
 
     var sheet = SpreadsheetApp.openById(SHEET_ID).getSheets()[0];
     var values = sheet.getDataRange().getValues();
@@ -38,9 +48,14 @@ function doPost(e) {
     var colScanned = ensureCol(sheet, header, 'נסרק');
     var colDate = ensureCol(sheet, header, 'תאריך סריקה');
     var colStation = ensureCol(sheet, header, 'עמדה');
+    // Name goes to the sheet's existing name column if it has one, else a new "שם".
+    var haveFields = Object.keys(fields).length > 0;
+    var colName = indexOfHint(header, NAME_HINTS);
+    if (colName === -1 && haveFields) colName = ensureCol(sheet, header, 'שם');
+    var colStatus = haveFields ? ensureCol(sheet, header, 'סטטוס (עודכן)') : -1;
     var tz = Session.getScriptTimeZone() || 'Asia/Jerusalem';
 
-    var oScan = [], oDate = [], oStation = [], written = 0;
+    var oScan = [], oDate = [], oStation = [], oName = [], oStatus = [], written = 0, namesWritten = 0;
     for (var r = 1; r < values.length; r++) {
       var bc = String(values[r][barcodeCol]).trim();
       var s = bc ? scans[bc] : null;
@@ -52,14 +67,25 @@ function doPost(e) {
       } else {
         oScan.push([bc ? 0 : '']); oDate.push(['']); oStation.push(['']);
       }
+      // editable fields — preserve the cell's current value when the app has none
+      var f = bc ? fields[bc] : null;
+      if (colName >= 0) {
+        var curName = String(values[r][colName] || '').trim();
+        var nm = f && f.name ? String(f.name) : curName;
+        if (f && f.name && f.name !== curName) namesWritten++;
+        oName.push([nm]);
+      }
+      if (colStatus >= 0) oStatus.push([f && f.status ? String(f.status) : '']);
     }
     var n = oScan.length;
     if (n) {
       sheet.getRange(2, colScanned + 1, n, 1).setValues(oScan);
       sheet.getRange(2, colDate + 1, n, 1).setValues(oDate);
       sheet.getRange(2, colStation + 1, n, 1).setValues(oStation);
+      if (colName >= 0) sheet.getRange(2, colName + 1, n, 1).setValues(oName);
+      if (colStatus >= 0) sheet.getRange(2, colStatus + 1, n, 1).setValues(oStatus);
     }
-    return json({ ok: true, rows: n, written: written });
+    return json({ ok: true, rows: n, written: written, names: namesWritten });
   } catch (err) {
     return json({ ok: false, error: String(err) });
   }

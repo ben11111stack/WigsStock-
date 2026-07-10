@@ -88,8 +88,26 @@ b, strong { font-weight: 600; }
   border-bottom: 1px solid color-mix(in oklab, var(--line) 54%, transparent);
 }
 .hdr-logo {
-  width: 38px; height: 38px; border-radius: 11px; flex: none;
-  object-fit: cover; background: #fff; border: 1px solid var(--line);
+  width: 38px; height: 38px; border-radius: 11px; flex: none; position: relative;
+  padding: 0; background: #fff; border: 1px solid var(--line); overflow: hidden;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.hdr-logo:active { transform: scale(.92); }
+.hl-sway { display: block; width: 100%; height: 100%; transform-origin: 50% 62%;
+  animation: hl-sway 4.6s ease-in-out infinite; }
+.hdr-logo img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 10px; }
+.hl-shine { position: absolute; inset: 0; border-radius: 10px; overflow: hidden; pointer-events: none; mix-blend-mode: screen; }
+.hl-shine::before { content: ""; position: absolute; top: -30%; bottom: -30%; left: -60%; width: 42%;
+  background: linear-gradient(105deg, transparent, rgba(255,250,235,.9) 50%, transparent 80%);
+  transform: rotate(10deg); animation: hl-sweep 4.6s ease-in-out infinite; }
+/* toggle in Settings turns OFF only the small logo's constant motion */
+.hdr-logo.no-anim .hl-sway { animation: none; }
+.hdr-logo.no-anim .hl-shine::before { animation: none; opacity: 0; }
+@keyframes hl-sway { 0%,100% { transform: rotate(-4.5deg); } 50% { transform: rotate(4.5deg); } }
+@keyframes hl-sweep { 0%,58% { left: -60%; } 84%,100% { left: 120%; } }
+@media (prefers-reduced-motion: reduce) {
+  .hl-sway, .hl-shine::before { animation: none; }
+  .hl-shine::before { opacity: 0; }
 }
 .hdr-title { display: flex; flex-direction: column; min-width: 0; }
 .hdr-title b { font-size: 21px; font-weight: 620; letter-spacing: -.02em; line-height: 1; }
@@ -648,11 +666,106 @@ td .ic { width: 15px; height: 15px; }
 .overlay-reader .scan-frame { position: absolute; inset: 18% 12%; }
 #overlayNote { padding: 12px 14px 16px; margin: 0; }
 
+/* ==================== Opening logo reveal (splash) ==================== */
+.splash { position: fixed; inset: 0; z-index: 999; display: grid; place-items: center;
+  background: radial-gradient(120% 90% at 50% 18%, #fffaf8, #fdeef0 55%, #f6e0e4);
+  overflow: hidden; opacity: 1; transition: opacity .5s ease; }
+.splash.done { opacity: 0; }
+.splash.hidden { display: none; }
+.splash-stage { position: relative; width: min(78vw, 440px); aspect-ratio: 1 / 1; }
+
+.sp-aura { position: absolute; inset: -8%; border-radius: 50%; z-index: -1; opacity: .5;
+  background: radial-gradient(circle at 50% 46%, rgba(231,201,155,.32), rgba(217,140,147,.10) 45%, transparent 66%); }
+.splash.run .sp-aura { animation: sp-aura 5.5s ease-in-out 1.3s infinite; }
+
+.sp-ring { position: absolute; inset: -2%; overflow: visible; transform: rotate(-90deg); }
+.sp-ring circle { fill: none; stroke: url(#spGrad); stroke-width: 1.1; stroke-linecap: round;
+  stroke-dasharray: 302; stroke-dashoffset: 302; }
+.splash.run .sp-ring circle { animation: sp-draw 1.4s cubic-bezier(.5,0,.2,1) .1s forwards; }
+
+.sp-logo { position: absolute; inset: 0; display: grid; place-items: center; transform-origin: 52% 62%; opacity: 0; }
+.splash.run .sp-logo { animation: sp-enter 1s cubic-bezier(.22,.61,.36,1) .35s both; }
+.sp-sway { position: absolute; inset: 0; transform-origin: 52% 62%; }
+.splash.run .sp-sway { animation: sp-sway 5.5s ease-in-out 1.3s infinite; }
+.sp-logo img { width: 100%; height: 100%; object-fit: contain; border-radius: 16%;
+  filter: drop-shadow(0 18px 40px rgba(190,120,120,.18)); }
+
+.sp-shine { position: absolute; inset: 0; overflow: hidden; border-radius: 14%; mix-blend-mode: screen; pointer-events: none; }
+.sp-shine::before { content: ""; position: absolute; top: -40%; bottom: -40%; left: -60%; width: 42%;
+  background: linear-gradient(105deg, transparent, rgba(255,248,225,.7) 50%, transparent 80%); transform: rotate(8deg); }
+.splash.run .sp-shine::before { animation: sp-sweep 5s cubic-bezier(.5,0,.2,1) 1.4s infinite; }
+
+.sp-textshine { position: absolute; left: 14%; width: 72%; top: 75%; height: 16%; overflow: hidden; mix-blend-mode: screen; pointer-events: none; }
+.sp-textshine::before { content: ""; position: absolute; top: -50%; bottom: -50%; left: -40%; width: 35%;
+  background: linear-gradient(100deg, transparent, rgba(255,246,220,.95) 50%, transparent); transform: skewX(-14deg); }
+.splash.run .sp-textshine::before { animation: sp-tsweep 5s ease-in-out 1.7s infinite; }
+
+.sp-spark { position: absolute; width: 7%; aspect-ratio: 1 / 1; opacity: 0;
+  transform: translate(-50%,-50%) scale(.2); filter: drop-shadow(0 0 6px rgba(255,240,210,.9)); }
+.sp-spark svg { width: 100%; height: 100%; }
+.sp-gleam { left: 47%; top: 29%; width: 5.5%; }
+.sp-s1 { left: 66%; top: 34%; }
+.sp-s2 { left: 24%; top: 60%; width: 6%; }
+.sp-s3 { left: 78%; top: 44%; width: 5.5%; }
+.splash.run .sp-gleam { animation: sp-twinkle 1.1s ease-in-out 1.55s infinite; }
+.splash.run .sp-s1 { animation: sp-twinkle 2.6s ease-in-out 1.9s infinite; }
+.splash.run .sp-s2 { animation: sp-twinkle 2.6s ease-in-out 2.5s infinite; }
+.splash.run .sp-s3 { animation: sp-twinkle 2.6s ease-in-out 3s infinite; }
+
+.sp-load { position: absolute; left: 50%; bottom: -11%; transform: translateX(-50%); display: flex; gap: 9px; opacity: 0; }
+.splash.run .sp-load { animation: sp-show .6s ease 1.7s forwards; }
+.sp-load i { width: 8px; height: 8px; border-radius: 50%; background: #d98c93; opacity: .35; }
+.splash.run .sp-load i { animation: sp-dot 1.3s ease-in-out infinite; }
+.splash.run .sp-load i:nth-child(2) { animation-delay: .16s; }
+.splash.run .sp-load i:nth-child(3) { animation-delay: .32s; }
+
+@keyframes sp-enter { 0% { opacity: 0; transform: translateY(4%) scale(.955); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes sp-sway { 0%,100% { transform: rotate(0); } 50% { transform: rotate(-.65deg); } }
+@keyframes sp-draw { to { stroke-dashoffset: 0; } }
+@keyframes sp-aura { 0%,100% { opacity: .55; transform: scale(1); } 50% { opacity: .85; transform: scale(1.03); } }
+@keyframes sp-sweep { 0% { left: -60%; } 45% { left: 120%; } 100% { left: 120%; } }
+@keyframes sp-tsweep { 0% { left: -40%; } 40% { left: 120%; } 100% { left: 120%; } }
+@keyframes sp-twinkle { 0% { opacity: 0; transform: translate(-50%,-50%) scale(.2) rotate(-20deg); }
+  40% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(.3) rotate(25deg); } }
+@keyframes sp-show { to { opacity: 1; } }
+@keyframes sp-dot { 0%,100% { opacity: .3; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-5px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .splash.run .sp-logo, .splash.run .sp-ring circle, .splash.run .sp-sway,
+  .splash.run .sp-aura, .splash.run .sp-shine::before, .splash.run .sp-textshine::before,
+  .splash.run .sp-spark, .splash.run .sp-load, .splash.run .sp-load i { animation: none; }
+  .splash.run .sp-logo { opacity: 1; }
+  .splash.run .sp-ring circle { stroke-dashoffset: 0; }
+}
+
 </style>
 </head>
 <body>
+  <!-- Opening logo reveal (plays on launch; replays on header-logo tap) -->
+  <div id="splash" class="splash" aria-hidden="true">
+    <div class="splash-stage">
+      <div class="sp-aura"></div>
+      <svg class="sp-ring" viewBox="0 0 100 100">
+        <defs><linearGradient id="spGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#e7c99b"/><stop offset="50%" stop-color="#d98c93"/><stop offset="100%" stop-color="#e7c99b"/>
+        </linearGradient></defs>
+        <circle cx="50" cy="50" r="48"/>
+      </svg>
+      <div class="sp-logo"><div class="sp-sway"><img src="wigsstock.png" alt="WigsStock"></div></div>
+      <div class="sp-shine"></div>
+      <div class="sp-textshine"></div>
+      <span class="sp-spark sp-gleam"></span><span class="sp-spark sp-s1"></span>
+      <span class="sp-spark sp-s2"></span><span class="sp-spark sp-s3"></span>
+      <div class="sp-load"><i></i><i></i><i></i></div>
+    </div>
+  </div>
+
   <header class="hdr">
-    <img class="hdr-logo" src="icon-192.png" alt="WigsStock" width="38" height="38">
+    <button id="hdrLogo" class="hdr-logo" type="button" aria-label="פתח את פתיח הלוגו" title="פתח את פתיח הלוגו">
+      <span class="hl-sway"><img src="icon-192.png" alt="WigsStock" width="38" height="38"></span>
+      <span class="hl-shine"></span>
+    </button>
     <div class="hdr-title">
       <b>ספירת מלאי</b>
       <small>WigsStock</small>
@@ -716,7 +829,7 @@ td .ic { width: 15px; height: 15px; }
         </div>
         <div class="scan-input-row">
           <input id="scanInput" class="scan-input" inputmode="numeric" autocomplete="off" placeholder="הקלד או סרוק ברקוד">
-          <button class="btn scan-add" id="manualAdd">רשום</button>
+          <button class="btn scan-add" id="manualAdd">הזן</button>
         </div>
         <div class="hint">סורק חיצוני (USB/בלוטות'): הקישי על השדה וסרקי — הברקוד נכנס לבד ו-Enter רושם.</div>
 
@@ -766,6 +879,10 @@ td .ic { width: 15px; height: 15px; }
           <label class="switch-row">
             <span>מצב כהה</span>
             <input type="checkbox" id="darkToggle" class="switch">
+          </label>
+          <label class="switch-row">
+            <span>אנימציה בלוגו הקטן</span>
+            <input type="checkbox" id="logoAnimToggle" class="switch">
           </label>
           <div class="fld-lbl" style="margin-top:20px">צליל סריקה</div>
           <div id="soundPicker" class="sound-picker"></div>
@@ -854,7 +971,7 @@ td .ic { width: 15px; height: 15px; }
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </button>
         <div class="acc-body">
-          <p class="muted small">כותב 3 עמודות — <b>נסרק</b> · <b>תאריך סריקה</b> · <b>עמדה</b> — אוטומטית תוך ~5 שניות. לא נוגע בעמודות המקוריות. דורש סקריפט חד-פעמי (<b>worker/sheets-writeback.gs</b>).</p>
+          <p class="muted small">כותב <b>נסרק</b> · <b>תאריך סריקה</b> · <b>עמדה</b> · <b>שם</b> (ושינויי סטטוס מהכרטיס) — אוטומטית תוך ~5 שניות. לא נוגע בעמודות המקוריות. דורש סקריפט חד-פעמי (<b>worker/sheets-writeback.gs</b>). כדי לכתוב שמות שהוזנו באפליקציה — הקישי "כתוב עכשיו".</p>
           <label class="fld" style="margin-top:10px">קישור Apps Script (Web app)
             <input id="writeUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec">
           </label>
@@ -985,8 +1102,15 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.10.0';
+const APP_VERSION = '1.11.0';
 const CHANGELOG = [
+  { v: '1.11.0', notes: [
+    'פתיח לוגו מונפש בכל פתיחת אפליקציה',
+    'הלוגו הקטן למעלה מונפש כל הזמן — לחיצה עליו פותחת את הפתיח המלא',
+    'מתג בהגדרות לכיבוי תנועת הלוגו הקטן (הפתיח עצמו תמיד פועל)',
+    'כתיבה חזרה לשיטס כוללת עכשיו גם עמודת שם (ושינויי סטטוס מהכרטיס)',
+    'כפתור "הזן" במסך הסריקה (במקום "רשום")'
+  ] },
   { v: '1.10.0', notes: [
     'כרטיס הפאה: שם ליד הברקוד (ניתן לעריכה) וסטטוס שניתן לשנות ישירות מהכרטיס',
     'ניהול סטטוסים בהגדרות — שם לכל סטטוס וסימון מה נחשב "בחנות"; סטטוסים חדשים מהשיטס נוספים לבד',
@@ -1065,7 +1189,8 @@ const state = {
   names: {},         // barcode -> wig name typed in the app (local, wins over the sheet)
   invNames: {},      // barcode -> wig name read from the sheet's name column (if any)
   statusOverrides: {}, // barcode -> status changed from the wig card (survives sheet reload)
-  statusVocab: null  // user-edited status vocabulary ([{key,label,inStore}]); null = defaults
+  statusVocab: null, // user-edited status vocabulary ([{key,label,inStore}]); null = defaults
+  logoAnim: true     // constant motion of the small header logo (splash always plays regardless)
 };
 
 /* ---------- Per-wig helpers ----------
@@ -2691,6 +2816,16 @@ function init() {
   load();
   applyTheme();
 
+  // opening logo reveal — plays on every launch; header logo replays it and
+  // animates continuously (its motion is toggleable in Settings). Wire + play
+  // early so it dismisses even if later setup throws.
+  applyLogoAnim();
+  const splash = $('#splash');
+  if (splash) splash.addEventListener('click', dismissSplash);
+  const hdrLogo = $('#hdrLogo');
+  if (hdrLogo) hdrLogo.addEventListener('click', playSplash);
+  playSplash();
+
   // paint all static [data-ic] placeholders from the one icon set
   $('[data-ic]').forEach(el => { el.innerHTML = ic(el.getAttribute('data-ic')); });
 
@@ -2939,7 +3074,38 @@ function init() {
   showTab(start);
 }
 
-// Appearance settings: accent swatches (global) + dark toggle + scan sound.
+/* ---------- Opening logo reveal (splash) ----------
+ * The full-screen reveal plays on every app open and whenever the header logo
+ * is tapped. The small header logo also animates continuously; that constant
+ * motion (only) can be turned off in Settings via state.logoAnim — the splash
+ * itself always plays. */
+const SPLASH_SPARK =
+  '<svg viewBox="0 0 100 100"><defs><radialGradient id="spg" cx="50%" cy="50%" r="50%">' +
+  '<stop offset="0%" stop-color="#fffbe9"/><stop offset="55%" stop-color="#f4d9a6"/>' +
+  '<stop offset="100%" stop-color="#e7c99b" stop-opacity="0"/></radialGradient></defs>' +
+  '<path d="M50 4 C54 34 66 46 96 50 C66 54 54 66 50 96 C46 66 34 54 4 50 C34 46 46 34 50 4 Z" fill="url(#spg)"/>' +
+  '<circle cx="50" cy="50" r="6" fill="#fffdf5"/></svg>';
+let splashTimer = null;
+function playSplash() {
+  const sp = $('#splash'); if (!sp) return;
+  sp.querySelectorAll('.sp-spark').forEach(s => { if (!s.innerHTML) s.innerHTML = SPLASH_SPARK; });
+  clearTimeout(splashTimer);
+  sp.classList.remove('hidden', 'done', 'run');
+  void sp.offsetWidth;                 // reflow so the CSS animations restart on replay
+  sp.classList.add('run');
+  splashTimer = setTimeout(dismissSplash, 2700);
+}
+function dismissSplash() {
+  const sp = $('#splash'); if (!sp) return;
+  clearTimeout(splashTimer);
+  sp.classList.add('done');
+  setTimeout(() => { sp.classList.add('hidden'); sp.classList.remove('run'); }, 520);
+}
+function applyLogoAnim() {
+  const el = $('#hdrLogo'); if (el) el.classList.toggle('no-anim', state.logoAnim === false);
+}
+
+// Appearance settings: accent swatches (global) + dark toggle + scan sound + logo motion.
 function setupTheme() {
   renderTheme();
   renderSound();
@@ -2948,6 +3114,11 @@ function setupTheme() {
   if (darkEl) {
     darkEl.checked = !!state.dark;
     darkEl.addEventListener('change', () => { state.dark = darkEl.checked; save(); applyTheme(); });
+  }
+  const logoEl = $('#logoAnimToggle');
+  if (logoEl) {
+    logoEl.checked = state.logoAnim !== false;
+    logoEl.addEventListener('change', () => { state.logoAnim = logoEl.checked; save(); applyLogoAnim(); });
   }
 }
 
@@ -3109,8 +3280,21 @@ async function registerScriptUrl() {
   } catch (e) { /* non-fatal */ }
 }
 
+// Editable per-wig fields (name + status change) this device knows about, to
+// write into the sheet alongside the scan columns. Names come from in-app edits
+// or the sheet's own name column; status only when it was changed from a card.
+function writebackFields() {
+  const fields = {};
+  const add = (bc, k, v) => { if (v) { (fields[bc] = fields[bc] || {})[k] = v; } };
+  for (const bc in state.names) add(bc, 'name', state.names[bc]);
+  for (const bc in state.invNames) if (!(fields[bc] && fields[bc].name)) add(bc, 'name', state.invNames[bc]);
+  for (const bc in state.statusOverrides) add(bc, 'status', state.statusOverrides[bc]);
+  return fields;
+}
+
 // Write results back to the sheet now. The Worker pulls the authoritative
 // scans (all stations) from the cloud, so it never depends on this device.
+// Names/status edits are attached from this device (see writebackFields).
 async function writeToSheet() {
   const note = $('#writeNote');
   const setNote = (c, t) => { if (note) { note.style.color = c; note.textContent = t; } };
@@ -3121,11 +3305,12 @@ async function writeToSheet() {
     await registerScriptUrl();   // also turns on auto-write from now on
     const r = await fetch(cloudBase() + '/api/writeback', {
       method: 'POST', headers: cloudHeaders(),
-      body: JSON.stringify({ script_url: state.writeUrl, count_id: state.countId })
+      body: JSON.stringify({ script_url: state.writeUrl, count_id: state.countId, fields: writebackFields() })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) throw new Error(j.error || ('שגיאה ' + r.status));
-    setNote('var(--ok)', `נכתב לשיטס — ${j.written} פאות (עמודות: נסרק / תאריך / עמדה). מכאן זה נכתב אוטומטית.`);
+    const nm = j.names ? ` · ${j.names} שמות` : '';
+    setNote('var(--ok)', `נכתב לשיטס — ${j.written} פאות (נסרק / תאריך / עמדה / שם${nm}). מכאן זה נכתב אוטומטית.`);
   } catch (e) {
     setNote('var(--bad)', e.message);
   }

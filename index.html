@@ -18,8 +18,30 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- Opening logo reveal (plays on launch; replays on header-logo tap) -->
+  <div id="splash" class="splash" aria-hidden="true">
+    <div class="splash-stage">
+      <div class="sp-aura"></div>
+      <svg class="sp-ring" viewBox="0 0 100 100">
+        <defs><linearGradient id="spGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#e7c99b"/><stop offset="50%" stop-color="#d98c93"/><stop offset="100%" stop-color="#e7c99b"/>
+        </linearGradient></defs>
+        <circle cx="50" cy="50" r="48"/>
+      </svg>
+      <div class="sp-logo"><div class="sp-sway"><img src="wigsstock.png" alt="WigsStock"></div></div>
+      <div class="sp-shine"></div>
+      <div class="sp-textshine"></div>
+      <span class="sp-spark sp-gleam"></span><span class="sp-spark sp-s1"></span>
+      <span class="sp-spark sp-s2"></span><span class="sp-spark sp-s3"></span>
+      <div class="sp-load"><i></i><i></i><i></i></div>
+    </div>
+  </div>
+
   <header class="hdr">
-    <img class="hdr-logo" src="icon-192.png" alt="WigsStock" width="38" height="38">
+    <button id="hdrLogo" class="hdr-logo" type="button" aria-label="פתח את פתיח הלוגו" title="פתח את פתיח הלוגו">
+      <span class="hl-sway"><img src="icon-192.png" alt="WigsStock" width="38" height="38"></span>
+      <span class="hl-shine"></span>
+    </button>
     <div class="hdr-title">
       <b>ספירת מלאי</b>
       <small>WigsStock</small>
@@ -83,7 +105,7 @@
         </div>
         <div class="scan-input-row">
           <input id="scanInput" class="scan-input" inputmode="numeric" autocomplete="off" placeholder="הקלד או סרוק ברקוד">
-          <button class="btn scan-add" id="manualAdd">רשום</button>
+          <button class="btn scan-add" id="manualAdd">הזן</button>
         </div>
         <div class="hint">סורק חיצוני (USB/בלוטות'): הקישי על השדה וסרקי — הברקוד נכנס לבד ו-Enter רושם.</div>
 
@@ -133,6 +155,10 @@
           <label class="switch-row">
             <span>מצב כהה</span>
             <input type="checkbox" id="darkToggle" class="switch">
+          </label>
+          <label class="switch-row">
+            <span>אנימציה בלוגו הקטן</span>
+            <input type="checkbox" id="logoAnimToggle" class="switch">
           </label>
           <div class="fld-lbl" style="margin-top:20px">צליל סריקה</div>
           <div id="soundPicker" class="sound-picker"></div>
@@ -221,7 +247,7 @@
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </button>
         <div class="acc-body">
-          <p class="muted small">כותב 3 עמודות — <b>נסרק</b> · <b>תאריך סריקה</b> · <b>עמדה</b> — אוטומטית תוך ~5 שניות. לא נוגע בעמודות המקוריות. דורש סקריפט חד-פעמי (<b>worker/sheets-writeback.gs</b>).</p>
+          <p class="muted small">כותב <b>נסרק</b> · <b>תאריך סריקה</b> · <b>עמדה</b> · <b>שם</b> (ושינויי סטטוס מהכרטיס) — אוטומטית תוך ~5 שניות. לא נוגע בעמודות המקוריות. דורש סקריפט חד-פעמי (<b>worker/sheets-writeback.gs</b>). כדי לכתוב שמות שהוזנו באפליקציה — הקישי "כתוב עכשיו".</p>
           <label class="fld" style="margin-top:10px">קישור Apps Script (Web app)
             <input id="writeUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec">
           </label>
