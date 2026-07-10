@@ -322,9 +322,12 @@ details summary { cursor: pointer; }
 
 /* ---------- Tables / lists ---------- */
 .scroll { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r); margin-top: 8px; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+/* border-collapse:separate (not collapse) so the sticky header paints its own
+ * opaque background and rows never bleed through it while scrolling */
+table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 th, td { text-align: right; padding: 9px 10px; border-bottom: 1px solid var(--line); }
-th { color: var(--ink-3); font-weight: 600; font-size: 12px; background: var(--surface); position: sticky; top: 0; }
+th { color: var(--ink-2); font-weight: 700; font-size: 12px; background: var(--surface-2);
+  position: sticky; top: 0; z-index: 2; border-bottom: 1.5px solid var(--line); }
 tr:last-child td { border-bottom: none; }
 td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .5px; }
 
@@ -1104,8 +1107,12 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.11.1';
+const APP_VERSION = '1.11.2';
 const CHANGELOG = [
+  { v: '1.11.2', notes: [
+    'שורת הכותרת בטבלאות הדוח נעוצה עם רקע אטום — שורות לא "מבצבצות" מבעדה',
+    'הדוחות מציגים את כל השורות (לא רק 500 הראשונות)'
+  ] },
   { v: '1.11.1', notes: [
     'תיקון: כפתור הסגירה בכרטיס הפאה כיסה את שם הפאה'
   ] },
@@ -1934,11 +1941,9 @@ async function reopenScanCamera(deviceId) {
 function tableFor(list, cols) {
   if (!list.length) return '<p class="muted small">אין פריטים בקטגוריה זו.</p>';
   const head = cols.map(c => `<th>${c.label}</th>`).join('');
-  const body = list.slice(0, 500).map(item => {
-    return '<tr>' + cols.map(c => `<td>${c.render(item)}</td>`).join('') + '</tr>';
-  }).join('');
-  const more = list.length > 500 ? `<p class="muted small">מוצגים 500 מתוך ${list.length}. הייצוא כולל את כולם.</p>` : '';
-  return `<div class="scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
+  const body = list.map(item =>          // show every row — the list scrolls inside its box
+    '<tr>' + cols.map(c => `<td>${c.render(item)}</td>`).join('') + '</tr>').join('');
+  return `<div class="scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function renderScanStats() {

@@ -54,8 +54,12 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.11.1';
+const APP_VERSION = '1.11.2';
 const CHANGELOG = [
+  { v: '1.11.2', notes: [
+    'שורת הכותרת בטבלאות הדוח נעוצה עם רקע אטום — שורות לא "מבצבצות" מבעדה',
+    'הדוחות מציגים את כל השורות (לא רק 500 הראשונות)'
+  ] },
   { v: '1.11.1', notes: [
     'תיקון: כפתור הסגירה בכרטיס הפאה כיסה את שם הפאה'
   ] },
@@ -884,11 +888,9 @@ async function reopenScanCamera(deviceId) {
 function tableFor(list, cols) {
   if (!list.length) return '<p class="muted small">אין פריטים בקטגוריה זו.</p>';
   const head = cols.map(c => `<th>${c.label}</th>`).join('');
-  const body = list.slice(0, 500).map(item => {
-    return '<tr>' + cols.map(c => `<td>${c.render(item)}</td>`).join('') + '</tr>';
-  }).join('');
-  const more = list.length > 500 ? `<p class="muted small">מוצגים 500 מתוך ${list.length}. הייצוא כולל את כולם.</p>` : '';
-  return `<div class="scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
+  const body = list.map(item =>          // show every row — the list scrolls inside its box
+    '<tr>' + cols.map(c => `<td>${c.render(item)}</td>`).join('') + '</tr>').join('');
+  return `<div class="scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function renderScanStats() {
