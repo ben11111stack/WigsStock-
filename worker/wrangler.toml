@@ -1,6 +1,9 @@
 name = "wigsstock-sync"
 main = "src/worker.js"
 compatibility_date = "2024-11-01"
+# Account id is an identifier (not a credential); lets CI deploy with only the
+# API token in a GitHub Secret. See .github/workflows/deploy-worker.yml.
+account_id = "7c5259865ad06b1a05dbff3e55d53027"
 
 # backstop auto-write (real writes fire within ~5s of a scan via /api/sync)
 [triggers]

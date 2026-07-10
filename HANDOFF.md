@@ -38,7 +38,7 @@
 
 ## ⚠️ פריסה — שים לב
 - **ה-Pages מוגן לפי ענף:** ה-environment `github-pages` מאפשר פריסה **רק מהענף `claude/inventory-barcode-scanner-4w4fbf`** (environment protection rule ברמת ה-repo, לא בקובץ). לכן דחיפה ל-`claude/improvements-features-ygud1v` **לא** מפרסת לאוויר — ניסיון כזה נכשל מיד. **כדי להעלות את גרסה 1.6.0 לאוויר:** או (א) למזג את הענף הזה ל-`claude/inventory-barcode-scanner-4w4fbf` (הוא מפרס אוטומטית), או (ב) לעדכן ב-GitHub → Settings → Environments → github-pages את רשימת הענפים המורשים כך שתכלול את הענף הזה.
-- ה-**Worker** לא נפרס אוטומטית — שינויי `worker/src/worker.js` (הקשחת האבטחה) ייכנסו לתוקף רק אחרי `npx wrangler@3 deploy` ידני עם הטוקן של המשתמש.
+- ה-**Worker נפרס אוטומטית** דרך `.github/workflows/deploy-worker.yml` בכל push ל-`worker/**` בענף הפרסום (או ידנית ב-workflow_dispatch). דורש **GitHub Secret** עם ה-Cloudflare API Token (מקבל את השמות `CLOUDFLARE_API_TOKEN` / `CF_API_TOKEN` / `CLOUDFLARE_TOKEN` / `CLOUDFLARE_WORKERS_TOKEN`). ה-`account_id` נמצא ב-`wrangler.toml`. כך אין צורך להזין את הטוקן שוב בכל סשן. (עדיין אפשר גם ידנית: `npx wrangler deploy` מתוך `worker/`.)
 
 ## קישורים
 - **אפליקציה חיה:** https://ben11111stack.github.io/WigsStock-/ (GitHub Pages)

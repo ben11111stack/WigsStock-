@@ -1,0 +1,29 @@
+name: Deploy Cloudflare Worker
+
+# Deploys worker/ to Cloudflare whenever the worker code changes on the release
+# branch, or on demand. The Cloudflare API token lives in a GitHub Secret
+# (Settings → Secrets and variables → Actions), so it never sits in the repo and
+# never has to be re-entered per session. Accepts the token under any of the
+# common secret names below.
+on:
+  push:
+    branches: [claude/inventory-barcode-scanner-4w4fbf]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/deploy-worker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CLOUDFLARE_WORKERS_TOKEN }}
+          workingDirectory: worker
+          command: deploy
