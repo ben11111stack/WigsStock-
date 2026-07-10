@@ -31,6 +31,7 @@ const state = {
   cloudUrl: '',      // Cloudflare Worker base URL ('' = local only)
   countId: '',       // shared inventory-count id across stations
   cloudScans: {},    // barcode -> total  (merged from all devices, pulled from cloud)
+  cloudDetail: {},   // barcode -> { count, last, station }  (who scanned, from cloud)
   dirty: {},         // barcode -> true   (scanned locally, not yet synced)
   deviceId: '',      // stable fallback id if no station name is set
   sheetUrl: '',      // Google Sheets link the inventory is loaded/synced from
@@ -186,6 +187,7 @@ let lastScanCode = '';
 function recordScan(rawCode) {
   const code = String(rawCode).trim();
   if (!code) return;
+  if (!hasStation()) { applyStationGate(); return; }   // never record without a station
 
   // Debounce: ignore the same code fired twice within 1.2s (camera repeats).
   const now = Date.now();
@@ -415,6 +417,12 @@ function renderReport() {
   const statusCol = { label: 'סטטוס בשיטס', render: i =>
     `<span class="tag ${isInStore(i.status) ? 'instock' : 'other'}">${esc(i.status)}</span>` };
   const countCol = { label: 'פעמים', render: i => i.count };
+  const stationCol = { label: 'עמדה', render: i => {
+    const d = state.cloudDetail && state.cloudDetail[i.barcode];
+    return d && d.station ? esc(d.station) : '<span class="muted">—</span>';
+  } };
+  const delCol = { label: '', render: i =>
+    `<button class="del-btn" title="מחק סריקה" onclick='deleteScan(${JSON.stringify(i.barcode)})'>🗑</button>` };
   const expected = r.expectedInStock;
   const pct = expected ? Math.round(r.ok.length / expected * 100) : 0;
   const cloudLine = cloudEnabled()
@@ -449,7 +457,7 @@ function renderReport() {
     <div class="card reclist">
       <h3>⚠️ בחנות אך מסומן אחרת <span class="badge">${r.foundOther.length}</span></h3>
       <p class="muted small">נסרקו פיזית אבל בשיטס לא רשומות כ-in-stock (למשל "נמכר"). צריך להחזיר ל-in-stock.</p>
-      ${tableFor(r.foundOther, [bcCol, statusCol])}
+      ${tableFor(r.foundOther, [bcCol, statusCol, stationCol, delCol])}
     </div>
 
     <div class="card reclist">
@@ -461,7 +469,7 @@ function renderReport() {
     <div class="card reclist">
       <h3>❓ ברקודים לא מוכרים <span class="badge">${r.unknown.length}</span></h3>
       <p class="muted small">נסרקו אך לא קיימים בקובץ המלאי.</p>
-      ${tableFor(r.unknown, [bcCol, countCol])}
+      ${tableFor(r.unknown, [bcCol, countCol, stationCol, delCol])}
     </div>
 
     <div class="card reclist">
@@ -471,7 +479,7 @@ function renderReport() {
 
     <div class="card reclist">
       <h3>✅ תקין <span class="badge">${r.ok.length}</span></h3>
-      ${tableFor(r.ok, [bcCol])}
+      ${tableFor(r.ok, [bcCol, stationCol, delCol])}
     </div>
   `;
 }
@@ -607,12 +615,13 @@ async function pullCloud() {
     const res = await fetch(cloudBase() + '/api/scans?count_id=' + encodeURIComponent(state.countId));
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    // a reset elsewhere clears this device's local scans too
+    // a reset (or a delete correction) elsewhere clears this device's local scans too
     if (data.reset_at && data.reset_at > (state.lastResetSeen || 0)) {
       state.lastResetSeen = data.reset_at;
       state.scans = {}; state.dirty = {};
     }
     state.cloudScans = data.scans || {};
+    state.cloudDetail = data.detail || {};
     state.cloudDevices = data.devices || 0;
     save();
     renderReport(); renderScanStats();
@@ -629,6 +638,27 @@ async function pullCloud() {
 
 function markAllDirty() { Object.keys(state.scans).forEach(b => { state.dirty[b] = true; }); }
 
+// Delete/correct a single barcode's scans across the whole count.
+async function deleteScan(barcode) {
+  barcode = String(barcode);
+  if (!confirm('למחוק את הסריקה של ' + barcode + '?\n(מכל העמדות בספירה)')) return;
+  delete state.scans[barcode];
+  delete state.dirty[barcode];
+  if (state.cloudScans) delete state.cloudScans[barcode];
+  if (state.cloudDetail) delete state.cloudDetail[barcode];
+  save(); renderReport(); renderScanStats();
+  if (cloudEnabled()) {
+    try {
+      const r = await fetch(cloudBase() + '/api/delete-scan', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count_id: state.countId, barcode })
+      });
+      const j = await r.json().catch(() => ({}));
+      if (j.reset_at) { state.lastResetSeen = j.reset_at; save(); }   // don't self-wipe on the resync it triggers
+    } catch (e) { alert('נמחק מקומית, אך הענן לא עודכן: ' + e.message); }
+  }
+}
+
 function startPolling() {
   clearInterval(pollTimer);
   if (!cloudEnabled()) return;
@@ -636,7 +666,7 @@ function startPolling() {
     if (!cloudEnabled()) return;
     if (Object.keys(state.dirty).length) pushCloud();
     pullCloud();
-  }, 15000);
+  }, 4000);   // near-immediate cross-station sync
 }
 
 function setCloudStatus(kind, data) {
@@ -725,6 +755,24 @@ function setupInstall() {
  * ===================================================================== */
 function ensureCamera() { if (!cameraOn) startCamera(); }
 
+function hasStation() { return !!(state.session && state.session.trim()); }
+
+function updateStationChip() {
+  const chip = $('#stationChip');
+  if (!chip) return;
+  if (hasStation()) { chip.textContent = '👤 ' + state.session.trim(); chip.classList.remove('warn'); }
+  else { chip.textContent = '⚠️ הגדר עמדה'; chip.classList.add('warn'); }
+}
+
+// Station is mandatory before scanning — show a gate until it's filled.
+function applyStationGate() {
+  const gate = $('#stationGate'), scanner = document.querySelector('#panel-scan .scanner');
+  const missing = !hasStation();
+  if (gate) gate.classList.toggle('hidden', !missing);
+  if (scanner) scanner.classList.toggle('hidden', missing);
+  return missing;
+}
+
 // push a history entry so the hardware/browser back button returns to the
 // previous tab instead of closing the installed app
 function navigate(name) {
@@ -739,17 +787,32 @@ function showTab(name) {
   $$('nav button').forEach(b => b.classList.toggle('active', b.id === 'tab-' + name));
   if (wasScan && name !== 'scan') stopCamera();       // free the camera when leaving
   if (name === 'report') { renderReport(); if (cloudEnabled()) pullCloud(); }   // refresh across stations
-  // start within the tap so iOS allows the camera; falls back to the overlay button
-  if (name === 'scan') ensureCamera();
+  if (name === 'scan') {
+    // require a station name first; start camera within the tap so iOS allows it
+    if (applyStationGate()) { setTimeout(() => $('#stationGateInput').focus(), 60); }
+    else ensureCamera();
+  }
 }
 
 function init() {
   load();
 
-  // session / station name
+  // session / station name (now lives in Settings; mandatory before scanning)
   const sess = $('#sessionName');
   sess.value = state.session || '';
-  sess.addEventListener('input', () => { state.session = sess.value; save(); setCloudStatus(); });
+  sess.addEventListener('input', () => { state.session = sess.value; save(); setCloudStatus(); updateStationChip(); });
+  updateStationChip();
+  $('#stationChip').addEventListener('click', () => navigate('settings'));
+
+  // mandatory-station gate on the scan tab
+  $('#stationGateSave').addEventListener('click', () => {
+    const v = $('#stationGateInput').value.trim();
+    if (!v) { $('#stationGateInput').focus(); return; }
+    state.session = v; sess.value = v; save();
+    updateStationChip(); setCloudStatus();
+    applyStationGate();
+    ensureCamera();
+  });
 
   // stable device id fallback (used if no station name is typed)
   if (!state.deviceId) { state.deviceId = 'dev-' + Math.random().toString(36).slice(2, 8); save(); }

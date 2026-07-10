@@ -83,12 +83,21 @@ b, strong { font-weight: 600; }
 .hdr-title b { font-size: 21px; font-weight: 620; letter-spacing: -.02em; line-height: 1; }
 .hdr-title small { font-size: 12px; font-weight: 500; color: var(--ink-3); margin-top: 4px; }
 .hdr-spacer { margin-inline-start: auto; }
-.hdr .station { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); }
-.hdr .station input {
-  width: 96px; font-family: inherit; font-size: 13px; color: var(--ink);
-  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm);
-  padding: 6px 8px;
+.station-chip {
+  font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  padding: 7px 12px; border-radius: 20px; max-width: 140px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line);
 }
+.station-chip.warn {
+  background: color-mix(in oklab, var(--bad) 12%, var(--bg));
+  color: var(--bad); border-color: color-mix(in oklab, var(--bad) 40%, var(--line));
+}
+.del-btn {
+  background: transparent; border: none; cursor: pointer; font-size: 15px;
+  padding: 2px 6px; border-radius: 6px; opacity: .8;
+}
+.del-btn:active { transform: scale(.9); }
 
 /* ---------- Install banner ---------- */
 .install-bar {
@@ -325,7 +334,7 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
       <small>WigsStock</small>
     </div>
     <div class="hdr-spacer"></div>
-    <label class="station">עמדה<input id="sessionName" placeholder="שם/קומה" maxlength="20"></label>
+    <button id="stationChip" class="station-chip" title="עמדה / הגדרות">עמדה</button>
   </header>
 
   <main>
@@ -338,32 +347,23 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
       </span>
     </div>
 
-    <!-- ==================== LOAD ==================== -->
+    <!-- ==================== INVENTORY (מלאי) ==================== -->
     <section id="panel-load" class="tab">
-      <div class="sec-head" style="padding-inline:18px">טעינת מלאי מגוגל שיטס</div>
+      <div class="sec-head" style="padding-inline:18px">מצב המלאי</div>
       <div class="card">
-        <h2>🔗 קישור לגוגל שיטס (מומלץ)</h2>
-        <p class="muted small">הדביקי קישור לגיליון. בשיטס: שיתוף → "כל מי שיש לו הקישור" → מציג. האפליקציה תטען את המלאי משם ותרענן בכל פתיחה.</p>
+        <div id="invStatus"></div>
         <div class="spacer"></div>
-        <label class="fld">קישור לגיליון
-          <input id="sheetUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/.../edit">
-        </label>
         <div class="row">
-          <button class="btn" id="sheetLoad">טען מהשיטס</button>
+          <button class="btn ghost small-btn" id="loadSample">טען דוגמה (2000)</button>
+          <button class="btn danger small-btn" id="clearInv">מחק מלאי</button>
         </div>
-        <p class="small" id="sheetNote" style="margin:8px 0 0"></p>
-        <div class="hint">צריך עמודת ברקוד ועמודת סטטוס. הכותרות מזוהות אוטומטית. הגיליון חייב להיות משותף ל"כל מי שיש לו הקישור".</div>
+        <div class="hint">המלאי נטען בדרך כלל מקישור גוגל שיטס (הגדרות → גוגל שיטס). כאן אפשר גם טעינה ידנית.</div>
       </div>
 
+      <div class="sec-head" style="padding-inline:18px">טעינה ידנית מקובץ</div>
       <div class="card">
-        <h2>📄 או קובץ CSV</h2>
-        <p class="muted small">בגוגל שיטס: קובץ ← הורדה ← ערכים מופרדים בפסיקים (CSV). צריך עמודת ברקוד ועמודת סטטוס — הכותרות מזוהות אוטומטית.</p>
-        <div class="spacer"></div>
         <label class="file-label" for="invFile">בחרי קובץ CSV · או גררי לכאן</label>
         <input type="file" id="invFile" accept=".csv,text/csv">
-        <div class="spacer"></div>
-        <button class="btn ghost small-btn" id="loadSample">טען מלאי לדוגמה (2000 פאות)</button>
-
         <details>
           <summary class="muted small">או הדביקי את הנתונים ידנית</summary>
           <div class="spacer"></div>
@@ -371,51 +371,22 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
           <div class="spacer"></div>
           <button class="btn secondary" id="invPasteBtn">טען מהטקסט</button>
         </details>
-
         <p class="small" id="importNote" style="color:var(--ok);margin:10px 0 0"></p>
-        <div class="hint">סטטוסים נתמכים: barter · consignment · fix-return · <b>in-stock</b> · inventory-reserved · missing · other · personal-use · returned · sold · wish-list</div>
-      </div>
-
-      <div class="sec-head" style="padding-inline:18px">מצב המלאי</div>
-      <div class="card">
-        <div id="invStatus"></div>
-        <div class="spacer"></div>
-        <button class="btn danger small-btn" id="clearInv">מחק מלאי</button>
-      </div>
-
-      <div class="sec-head" style="padding-inline:18px">סנכרון ענן</div>
-      <div class="card">
-        <p class="muted small">שומר את הסריקות בענן (לא רק במכשיר) וממזג בין כל העמדות. אם משאירים ריק — עובד מקומית בלבד.</p>
-        <div class="spacer"></div>
-        <label class="fld">כתובת השרת (Worker URL)
-          <input id="cloudUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://wigsstock-sync....workers.dev">
-        </label>
-        <label class="fld">שם ספירה משותף (זהה בכל העמדות)
-          <input id="countId" autocomplete="off" placeholder="יולי-2026">
-        </label>
-        <div id="cloudStatus" style="margin:6px 0 10px"></div>
-        <div class="row">
-          <button class="btn secondary small-btn" id="cloudTest">בדוק חיבור</button>
-          <button class="btn ghost small-btn" id="cloudPull">משוך מהענן</button>
-        </div>
-        <div class="hint">כל עמדה מקבלת שם משלה בשדה "עמדה" למעלה. אותו "שם ספירה" בכל המכשירים = ספירה משותפת. הגדרת השרת: ראו <b>worker/README.md</b>.</div>
-      </div>
-
-      <div class="sec-head" style="padding-inline:18px">כתיבה חזרה לשיטס</div>
-      <div class="card">
-        <p class="muted small">כותב 3 עמודות חדשות — <b>נסרק</b> (כמות) · <b>תאריך סריקה</b> · <b>עמדה</b>. <b>לא נוגע בעמודות המקוריות.</b> אחרי שמדביקים את הקישור פעם אחת — נכתב <b>אוטומטית כל ~2 דקות</b>. דורש הרשאת עריכה + סקריפט חד-פעמי (<b>worker/sheets-writeback.gs</b>).</p>
-        <div class="spacer"></div>
-        <label class="fld">קישור Apps Script (Web app)
-          <input id="writeUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec">
-        </label>
-        <button class="btn" id="writeBtn">כתוב תוצאות לשיטס</button>
-        <p class="small" id="writeNote" style="margin:8px 0 0"></p>
-        <div class="hint">בגיליון: תוספים ← Apps Script ← הדביקו את הסקריפט ← Deploy ← Web app (הרצה: אני, גישה: כל אחד) ← העתיקו את הכתובת לכאן.</div>
+        <div class="hint">צריך עמודת ברקוד ועמודת סטטוס. סטטוסים: barter · consignment · fix-return · <b>in-stock</b> · inventory-reserved · missing · other · personal-use · returned · sold · wish-list</div>
       </div>
     </section>
 
     <!-- ==================== SCAN ==================== -->
     <section id="panel-scan" class="tab">
+      <div id="stationGate" class="card hidden">
+        <h2>⚠️ חסר שם עמדה</h2>
+        <p class="muted small">חובה להזין שם עמדה / משתמש לפני סריקה — כדי לדעת מי סרק כל פאה.</p>
+        <div class="spacer"></div>
+        <label class="fld">שם עמדה / משתמש
+          <input id="stationGateInput" autocomplete="off" placeholder="למשל: יעל / קומה 2" maxlength="24">
+        </label>
+        <button class="btn" id="stationGateSave">שמור והתחל לסרוק</button>
+      </div>
       <div class="scanner">
         <div id="reader">
           <video id="video" playsinline muted autoplay></video>
@@ -469,6 +440,58 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
       </div>
     </section>
 
+    <!-- ==================== SETTINGS ==================== -->
+    <section id="panel-settings" class="tab">
+      <div class="sec-head" style="padding-inline:18px">עמדה ומשתמש</div>
+      <div class="card">
+        <label class="fld">שם עמדה / משתמש <span style="color:var(--bad)">(חובה)</span>
+          <input id="sessionName" autocomplete="off" placeholder="למשל: יעל / קומה 2" maxlength="24">
+        </label>
+        <label class="fld">שם ספירה (זהה בכל העמדות)
+          <input id="countId" autocomplete="off" placeholder="main">
+        </label>
+        <div class="hint">כל טלפון = שם עמדה משלו. אותו "שם ספירה" בכל המכשירים = ספירה משותפת אחת.</div>
+      </div>
+
+      <div class="sec-head" style="padding-inline:18px">מלאי מגוגל שיטס</div>
+      <div class="card">
+        <p class="muted small">המלאי נטען מהקישור ומתרענן בכל פתיחה, בכל העמדות. הגיליון חייב להיות משותף ל"כל מי שיש לו הקישור — מציג".</p>
+        <div class="spacer"></div>
+        <label class="fld">קישור לגיליון
+          <input id="sheetUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/.../edit">
+        </label>
+        <button class="btn" id="sheetLoad">טען מהשיטס</button>
+        <p class="small" id="sheetNote" style="margin:8px 0 0"></p>
+      </div>
+
+      <div class="sec-head" style="padding-inline:18px">סנכרון ענן</div>
+      <div class="card">
+        <div id="cloudStatus" style="margin-bottom:10px"></div>
+        <div class="row">
+          <button class="btn secondary small-btn" id="cloudTest">בדוק חיבור</button>
+          <button class="btn ghost small-btn" id="cloudPull">משוך מהענן</button>
+        </div>
+        <details>
+          <summary class="muted small">הגדרות מתקדמות (כתובת שרת)</summary>
+          <div class="spacer"></div>
+          <label class="fld">כתובת השרת (Worker URL)
+            <input id="cloudUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://wigsstock-sync....workers.dev">
+          </label>
+        </details>
+      </div>
+
+      <div class="sec-head" style="padding-inline:18px">כתיבה חזרה לשיטס</div>
+      <div class="card">
+        <p class="muted small">כותב 3 עמודות — <b>נסרק</b> · <b>תאריך סריקה</b> · <b>עמדה</b> — ומעדכן <b>אוטומטית תוך ~5 שניות מסריקה</b>. לא נוגע בעמודות המקוריות. דורש סקריפט חד-פעמי (<b>worker/sheets-writeback.gs</b>).</p>
+        <div class="spacer"></div>
+        <label class="fld">קישור Apps Script (Web app)
+          <input id="writeUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec">
+        </label>
+        <button class="btn" id="writeBtn">כתוב עכשיו לשיטס</button>
+        <p class="small" id="writeNote" style="margin:8px 0 0"></p>
+      </div>
+    </section>
+
   </main>
 
   <nav class="bottomnav">
@@ -487,6 +510,10 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
     <button id="tab-export">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
       ייצוא
+    </button>
+    <button id="tab-settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      הגדרות
     </button>
   </nav>
 
@@ -527,6 +554,7 @@ const state = {
   cloudUrl: '',      // Cloudflare Worker base URL ('' = local only)
   countId: '',       // shared inventory-count id across stations
   cloudScans: {},    // barcode -> total  (merged from all devices, pulled from cloud)
+  cloudDetail: {},   // barcode -> { count, last, station }  (who scanned, from cloud)
   dirty: {},         // barcode -> true   (scanned locally, not yet synced)
   deviceId: '',      // stable fallback id if no station name is set
   sheetUrl: '',      // Google Sheets link the inventory is loaded/synced from
@@ -682,6 +710,7 @@ let lastScanCode = '';
 function recordScan(rawCode) {
   const code = String(rawCode).trim();
   if (!code) return;
+  if (!hasStation()) { applyStationGate(); return; }   // never record without a station
 
   // Debounce: ignore the same code fired twice within 1.2s (camera repeats).
   const now = Date.now();
@@ -911,6 +940,12 @@ function renderReport() {
   const statusCol = { label: 'סטטוס בשיטס', render: i =>
     `<span class="tag ${isInStore(i.status) ? 'instock' : 'other'}">${esc(i.status)}</span>` };
   const countCol = { label: 'פעמים', render: i => i.count };
+  const stationCol = { label: 'עמדה', render: i => {
+    const d = state.cloudDetail && state.cloudDetail[i.barcode];
+    return d && d.station ? esc(d.station) : '<span class="muted">—</span>';
+  } };
+  const delCol = { label: '', render: i =>
+    `<button class="del-btn" title="מחק סריקה" onclick='deleteScan(${JSON.stringify(i.barcode)})'>🗑</button>` };
   const expected = r.expectedInStock;
   const pct = expected ? Math.round(r.ok.length / expected * 100) : 0;
   const cloudLine = cloudEnabled()
@@ -945,7 +980,7 @@ function renderReport() {
     <div class="card reclist">
       <h3>⚠️ בחנות אך מסומן אחרת <span class="badge">${r.foundOther.length}</span></h3>
       <p class="muted small">נסרקו פיזית אבל בשיטס לא רשומות כ-in-stock (למשל "נמכר"). צריך להחזיר ל-in-stock.</p>
-      ${tableFor(r.foundOther, [bcCol, statusCol])}
+      ${tableFor(r.foundOther, [bcCol, statusCol, stationCol, delCol])}
     </div>
 
     <div class="card reclist">
@@ -957,7 +992,7 @@ function renderReport() {
     <div class="card reclist">
       <h3>❓ ברקודים לא מוכרים <span class="badge">${r.unknown.length}</span></h3>
       <p class="muted small">נסרקו אך לא קיימים בקובץ המלאי.</p>
-      ${tableFor(r.unknown, [bcCol, countCol])}
+      ${tableFor(r.unknown, [bcCol, countCol, stationCol, delCol])}
     </div>
 
     <div class="card reclist">
@@ -967,7 +1002,7 @@ function renderReport() {
 
     <div class="card reclist">
       <h3>✅ תקין <span class="badge">${r.ok.length}</span></h3>
-      ${tableFor(r.ok, [bcCol])}
+      ${tableFor(r.ok, [bcCol, stationCol, delCol])}
     </div>
   `;
 }
@@ -1103,12 +1138,13 @@ async function pullCloud() {
     const res = await fetch(cloudBase() + '/api/scans?count_id=' + encodeURIComponent(state.countId));
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    // a reset elsewhere clears this device's local scans too
+    // a reset (or a delete correction) elsewhere clears this device's local scans too
     if (data.reset_at && data.reset_at > (state.lastResetSeen || 0)) {
       state.lastResetSeen = data.reset_at;
       state.scans = {}; state.dirty = {};
     }
     state.cloudScans = data.scans || {};
+    state.cloudDetail = data.detail || {};
     state.cloudDevices = data.devices || 0;
     save();
     renderReport(); renderScanStats();
@@ -1125,6 +1161,27 @@ async function pullCloud() {
 
 function markAllDirty() { Object.keys(state.scans).forEach(b => { state.dirty[b] = true; }); }
 
+// Delete/correct a single barcode's scans across the whole count.
+async function deleteScan(barcode) {
+  barcode = String(barcode);
+  if (!confirm('למחוק את הסריקה של ' + barcode + '?\n(מכל העמדות בספירה)')) return;
+  delete state.scans[barcode];
+  delete state.dirty[barcode];
+  if (state.cloudScans) delete state.cloudScans[barcode];
+  if (state.cloudDetail) delete state.cloudDetail[barcode];
+  save(); renderReport(); renderScanStats();
+  if (cloudEnabled()) {
+    try {
+      const r = await fetch(cloudBase() + '/api/delete-scan', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count_id: state.countId, barcode })
+      });
+      const j = await r.json().catch(() => ({}));
+      if (j.reset_at) { state.lastResetSeen = j.reset_at; save(); }   // don't self-wipe on the resync it triggers
+    } catch (e) { alert('נמחק מקומית, אך הענן לא עודכן: ' + e.message); }
+  }
+}
+
 function startPolling() {
   clearInterval(pollTimer);
   if (!cloudEnabled()) return;
@@ -1132,7 +1189,7 @@ function startPolling() {
     if (!cloudEnabled()) return;
     if (Object.keys(state.dirty).length) pushCloud();
     pullCloud();
-  }, 15000);
+  }, 4000);   // near-immediate cross-station sync
 }
 
 function setCloudStatus(kind, data) {
@@ -1221,6 +1278,24 @@ function setupInstall() {
  * ===================================================================== */
 function ensureCamera() { if (!cameraOn) startCamera(); }
 
+function hasStation() { return !!(state.session && state.session.trim()); }
+
+function updateStationChip() {
+  const chip = $('#stationChip');
+  if (!chip) return;
+  if (hasStation()) { chip.textContent = '👤 ' + state.session.trim(); chip.classList.remove('warn'); }
+  else { chip.textContent = '⚠️ הגדר עמדה'; chip.classList.add('warn'); }
+}
+
+// Station is mandatory before scanning — show a gate until it's filled.
+function applyStationGate() {
+  const gate = $('#stationGate'), scanner = document.querySelector('#panel-scan .scanner');
+  const missing = !hasStation();
+  if (gate) gate.classList.toggle('hidden', !missing);
+  if (scanner) scanner.classList.toggle('hidden', missing);
+  return missing;
+}
+
 // push a history entry so the hardware/browser back button returns to the
 // previous tab instead of closing the installed app
 function navigate(name) {
@@ -1235,17 +1310,32 @@ function showTab(name) {
   $('nav button').forEach(b => b.classList.toggle('active', b.id === 'tab-' + name));
   if (wasScan && name !== 'scan') stopCamera();       // free the camera when leaving
   if (name === 'report') { renderReport(); if (cloudEnabled()) pullCloud(); }   // refresh across stations
-  // start within the tap so iOS allows the camera; falls back to the overlay button
-  if (name === 'scan') ensureCamera();
+  if (name === 'scan') {
+    // require a station name first; start camera within the tap so iOS allows it
+    if (applyStationGate()) { setTimeout(() => $('#stationGateInput').focus(), 60); }
+    else ensureCamera();
+  }
 }
 
 function init() {
   load();
 
-  // session / station name
+  // session / station name (now lives in Settings; mandatory before scanning)
   const sess = $('#sessionName');
   sess.value = state.session || '';
-  sess.addEventListener('input', () => { state.session = sess.value; save(); setCloudStatus(); });
+  sess.addEventListener('input', () => { state.session = sess.value; save(); setCloudStatus(); updateStationChip(); });
+  updateStationChip();
+  $('#stationChip').addEventListener('click', () => navigate('settings'));
+
+  // mandatory-station gate on the scan tab
+  $('#stationGateSave').addEventListener('click', () => {
+    const v = $('#stationGateInput').value.trim();
+    if (!v) { $('#stationGateInput').focus(); return; }
+    state.session = v; sess.value = v; save();
+    updateStationChip(); setCloudStatus();
+    applyStationGate();
+    ensureCamera();
+  });
 
   // stable device id fallback (used if no station name is typed)
   if (!state.deviceId) { state.deviceId = 'dev-' + Math.random().toString(36).slice(2, 8); save(); }
