@@ -47,6 +47,9 @@
 
     <!-- ==================== INVENTORY (מלאי) ==================== -->
     <section id="panel-load" class="tab">
+      <div class="card" style="margin-bottom:0">
+        <div class="hint" style="margin:0">📄 <b>לשונית "מלאי"</b> — כאן <b>טוענים</b> את קובץ הפאות (מגוגל שיטס או CSV). זו רשימת האמת של מה שאמור להיות. לתוצאות הספירה מול הרשימה — עברי ל<b>לשונית "דוח"</b>.</div>
+      </div>
       <div class="sec-head" style="padding-inline:18px">מצב המלאי</div>
       <div class="card">
         <div id="invStatus"></div>
@@ -94,8 +97,11 @@
         <p class="small muted center" id="cameraNote"></p>
         <div id="scanBanner" class="scan-banner"><div class="msg muted">פותח מצלמה…</div></div>
         <div class="scan-tools">
-          <span class="scan-mini"><b id="scanCount">0</b> נסרקו</span>
+          <span class="scan-mini"><b id="scanCount">0</b> נסרקו <span class="pending-badge hidden"></span></span>
           <span class="scan-tools-btns">
+            <button id="undoBtn" class="icon-btn" title="בטל סריקה אחרונה" disabled>↩︎</button>
+            <button id="redoBtn" class="icon-btn" title="החזר סריקה" disabled>↪︎</button>
+            <button id="batchBtn" class="icon-btn" title="מצב רשימה (באטש)">📋</button>
             <button id="flashBtn" class="icon-btn hidden" title="פלאש">🔦</button>
             <button id="cameraBtn" class="icon-btn" title="הפעל/עצור מצלמה">📷</button>
             <button id="resetScans" class="icon-btn danger" title="אפס סריקות">↺</button>
@@ -106,6 +112,14 @@
           <button class="btn scan-add" id="manualAdd">רשום</button>
         </div>
         <div class="hint">סורק חיצוני (USB/בלוטות'): הקישי על השדה וסרקי — הברקוד נכנס לבד ו-Enter רושם.</div>
+
+        <div id="batchPanel" class="batch-panel hidden">
+          <div class="batch-head">
+            <span><b id="batchCount">0</b> בסבב הזה</span>
+            <button id="batchClear" class="btn ghost small-btn">נקה רשימה</button>
+          </div>
+          <div id="batchList" class="batch-list"></div>
+        </div>
       </div>
     </section>
 
@@ -118,15 +132,23 @@
     <section id="panel-export" class="tab">
       <div class="sec-head" style="padding-inline:18px">ייצוא תוצאות</div>
       <div class="card">
-        <p class="muted small">כל הקבצים ב-CSV — נפתחים בגוגל שיטס / אקסל.</p>
+        <button class="btn" id="expExcel">⬇️ הורד ל-Excel (xlsx) — כל הדוחות</button>
+        <div class="hint">קובץ Excel אחד עם לשונית לכל דוח, נפתח מושלם בעברית (בלי ג'יבריש).</div>
         <div class="spacer"></div>
-        <button class="btn" id="expFull">דוח התאמה מלא</button>
-        <div class="spacer"></div>
-        <button class="btn secondary" id="expUpdates">עדכוני סטטוס מוצעים</button>
-        <div class="spacer"></div>
-        <button class="btn ghost" id="expScans">סריקות גולמיות (גיבוי / מיזוג)</button>
+        <details>
+          <summary class="muted small">הורדה כ-CSV (לגוגל שיטס)</summary>
+          <div class="spacer"></div>
+          <button class="btn secondary" id="expFull">דוח התאמה מלא</button>
+          <div class="spacer"></div>
+          <button class="btn secondary" id="expUpdates">עדכוני סטטוס מוצעים</button>
+          <div class="spacer"></div>
+          <button class="btn ghost" id="expScans">סריקות גולמיות (גיבוי / מיזוג)</button>
+        </details>
         <div class="hint"><b>דוח התאמה</b> — כל פאה עם הקטגוריה שלה.<br><b>עדכוני סטטוס</b> — התיקונים להחזרה לשיטס (sold ← in-stock).<br><b>סריקות גולמיות</b> — גיבוי, ולמיזוג בין מכשירים.</div>
       </div>
+
+      <div class="sec-head" style="padding-inline:18px">תצוגה מקדימה של הדוחות</div>
+      <div id="exportPreview"></div>
 
       <div class="sec-head" style="padding-inline:18px">מיזוג ממכשיר אחר</div>
       <div class="card">
@@ -188,7 +210,10 @@
             <label class="fld">כתובת השרת (Worker URL)
               <input id="cloudUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://wigsstock-sync....workers.dev">
             </label>
-            <div class="hint">"שם ספירה" מאגד את כל העמדות לספירה אחת. השאירו main אם יש ספירה אחת.</div>
+            <label class="fld">מפתח גישה (רשות)
+              <input id="apiKey" autocomplete="off" placeholder="רק אם השרת דורש מפתח">
+            </label>
+            <div class="hint">"שם ספירה" מאגד את כל העמדות לספירה אחת. השאירו main אם יש ספירה אחת. "מפתח גישה" נחוץ רק אם הפעלתם אבטחה בשרת (אחרת השאירו ריק).</div>
           </details>
         </div>
       </div>

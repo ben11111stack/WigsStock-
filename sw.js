@@ -1,5 +1,5 @@
 /* WigsStock service worker – offline shell, network-first so updates land */
-const CACHE = 'wigsstock-v9';
+const CACHE = 'wigsstock-v10';
 
 self.addEventListener('message', (e) => { if (e.data === 'SKIP_WAITING') self.skipWaiting(); });
 const ASSETS = [

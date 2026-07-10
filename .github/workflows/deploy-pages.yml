@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [claude/inventory-barcode-scanner-4w4fbf]
+    branches: [claude/inventory-barcode-scanner-4w4fbf, claude/improvements-features-ygud1v]
   workflow_dispatch:
 
 permissions:

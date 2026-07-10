@@ -1,18 +1,31 @@
 # WigsStock · Handoff (למפתח/סשן הבא)
 
 אפליקציית **ספירת מלאי פאות** עם סריקת ברקוד, סנכרון ענן בין עמדות, וקריאה/כתיבה מול Google Sheets.
-המסמך הזה מסכם את כל מה שצריך כדי להמשיך. **סטטוס: פרודוקשן, גרסה 1.5.1.**
+המסמך הזה מסכם את כל מה שצריך כדי להמשיך. **סטטוס: פרודוקשן, גרסה 1.6.0.**
 
-## ⛔ תקלה פעילה (10/07/2026) — ה-Worker בענן לא זמין
-כל תכונות הענן שבורות כרגע: **טעינה מהשיטס, כתיבה לשיטס, וגם סנכרון בין עמדות** — כולן מחזירות בדפדפן `Failed to fetch`.
-- **אבחון:** הכתובת `https://wigsstock-sync.benzi-naor.workers.dev` כבר **לא מריצה את worker ה-API**. השורש (`/`) מחזיר את ה-HTML של האפליקציה, וכל `/api/*` מחזיר `404` בלי כותרות CORS → הדפדפן זורק `Failed to fetch` (ולכן זו לא שגיאת "404" רגילה). כנראה נפרס מעל אותו שם `wigsstock-sync` משהו שמגיש קבצים סטטיים, שדרס את worker הסנכרון.
-- **תיקון:** לפרוס מחדש את ה-worker הנכון (`worker/src/worker.js`, ה-`wrangler.toml` בריפו כבר תקין) — מ-`worker/`: `export CLOUDFLARE_API_TOKEN=<token>; export CLOUDFLARE_ACCOUNT_ID=7c5259865ad06b1a05dbff3e55d53027; npx wrangler@3 deploy`. **דורש את ה-Cloudflare API Token מהמשתמש** (לא נשמר בריפו). אחרי הפריסה: `curl https://wigsstock-sync.benzi-naor.workers.dev/api/health` אמור להחזיר `{"ok":true,"service":"wigsstock-sync"}`.
+## ✅ מצב הענן (10/07/2026) — תקין
+ה-Worker חי ותקין: `curl https://wigsstock-sync.benzi-naor.workers.dev/api/health` → `{"ok":true,"service":"wigsstock-sync"}`.
+טעינה מהשיטס, סנכרון בין עמדות, וכתיבה אוטומטית חזרה לשיטס (throttle 5ש' + cron) — כולם עובדים.
+(התקלה שתועדה כאן בעבר נפתרה — ה-Worker נפרס מחדש.)
 
-**הכל committed + pushed.**
+## מה חדש בגרסה 1.6.0
+- **נורמליזציית ברקוד** (`normBarcode`) — מוחלת זהה בייבוא מהשיטס, בכל סריקה ובמיזוג. מטפלת ברווחים, גרש מוביל (`'01234`), ואפסים מובילים (`01234`==`1234`) כדי שלא ייווצרו "חסר"+"לא מוכר" מזויפים.
+- **חיפוש חי בדוח**, **לחיצה על ריבוע בדאשבורד** קופצת לקטגוריה, **פילוח לפי עמדה/עובדת**.
+- **Undo/Redo** לסריקות + **מצב באטש** עם רשימת "סריקות אחרונות" וביטול מהיר לכל פריט.
+- **מונה "ממתינות לסנכרון"** גלוי במסך הסריקה.
+- **ייצוא ל-Excel (xlsx) אמיתי** — כותב xlsx בלי ספריות (zip "stored" + CRC32, תאים inlineStr). פותר ג'יבריש עברית ב-Excel. גם **תצוגה מקדימה** של כל הדוחות בתוך האפליקציה.
+- **בדיקות אוטומטיות** (`tests/run.js`, ללא תלויות) + workflow CI (`.github/workflows/tests.yml`) שרץ בכל push/PR ומוודא שגם `wigsstock-app.html` מעודכן.
+- **אבטחה קלה (רשות) ב-Worker**: אם מגדירים secret בשם `API_KEY` ב-Cloudflare, כל ה-POST-ים דורשים כותרת `x-api-key` תואמת (בקריאה — פתוח). כבוי כברירת מחדל → תואם לאחור. באפליקציה יש שדה "מפתח גישה" בהגדרות מתקדמות. **מפעילים ב-`npx wrangler secret put API_KEY` + redeploy** (דורש טוקן מהמשתמש). בנוסף: תקרות קלט (`MAX_*`) תמיד פעילות (אחרי redeploy).
+
+**הכל committed + pushed לענף `claude/improvements-features-ygud1v`.**
+
+## ⚠️ פריסה — שים לב
+- `.github/workflows/deploy-pages.yml` מפרס ל-GitHub Pages. **הוספתי את הענף `claude/improvements-features-ygud1v` לטריגר** כדי שהשינויים יעלו לאוויר. שני הענפים מפרסים לאותו אתר Pages (concurrency group `pages`, cancel-in-progress) — הענף שנדחף אחרון מנצח. אם ממזגים לענף הראשי אפשר לצמצם חזרה לענף אחד.
+- ה-**Worker** לא נפרס אוטומטית — שינויי `worker/src/worker.js` (הקשחת האבטחה) ייכנסו לתוקף רק אחרי `npx wrangler@3 deploy` ידני עם הטוקן של המשתמש.
 
 ## קישורים
 - **אפליקציה חיה:** https://ben11111stack.github.io/WigsStock-/ (GitHub Pages)
-- **Repo:** `ben11111stack/WigsStock-` (public) · branch עבודה: `claude/inventory-barcode-scanner-4w4fbf`
+- **Repo:** `ben11111stack/WigsStock-` (public) · branch עבודה נוכחי: `claude/improvements-features-ygud1v`
 - **Backend (Cloudflare Worker):** https://wigsstock-sync.benzi-naor.workers.dev
 - **גיליון המלאי (של המשתמש):** Google Sheet id `17Sem_IwgporhMsXEhVvW7ysIamzc_Ktxv-7molhp35k` (משותף "מציג")
 
@@ -36,7 +49,7 @@ D1 טבלאות: `scans(count_id, device, barcode, count, updated_at)` (PK של 
 - **Cron** `* * * * *` (scheduled) — כתיבה אוטומטית לשיטס לכל count עם `script_url` ושינויים חדשים.
 
 ## פריסה
-- **Frontend:** push ל-branch → GitHub Actions (`.github/workflows/deploy-pages.yml`) בונה ופורס ל-Pages אוטומטית. אחרי כל שינוי קוד לקוח **במפ את `CACHE` ב-`sw.js`** (כרגע `wigsstock-v4`) כדי שבאנר "עדכן עכשיו" יופיע למשתמשים.
+- **Frontend:** push ל-branch → GitHub Actions (`.github/workflows/deploy-pages.yml`) בונה ופורס ל-Pages אוטומטית. אחרי כל שינוי קוד לקוח **במפ את `CACHE` ב-`sw.js`** (כרגע `wigsstock-v10`) כדי שבאנר "עדכן עכשיו" יופיע למשתמשים.
 - **קובץ יחיד:** `node build-single.js` → `wigsstock-app.html` (הכל inline). הרץ אחרי כל שינוי frontend.
 - **Worker:** מתוך `worker/` —
   ```bash

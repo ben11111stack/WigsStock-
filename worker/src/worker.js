@@ -18,10 +18,25 @@
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type,x-api-key',
 };
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
+
+// Optional shared secret. If API_KEY is set on the Worker (a Cloudflare
+// secret / var), every mutating endpoint requires a matching x-api-key header.
+// Unset = open, exactly like before — so this is safe to deploy as-is and can
+// be switched on later with `wrangler secret put API_KEY` (no app change: paste
+// the same key in the app's advanced settings). Reads stay open either way.
+function authed(req, env) {
+  if (!env || !env.API_KEY) return true;
+  return req.headers.get('x-api-key') === env.API_KEY;
+}
+
+// Guardrails so a single request can't wedge the DB or blow past D1 limits.
+const MAX_ID_LEN = 64;      // count_id / device
+const MAX_BARCODE_LEN = 64;
+const MAX_SCANS_PER_SYNC = 20000;
 
 // Turn any Google Sheets link into a CSV export URL.
 function normalizeSheetUrl(src) {
@@ -83,15 +98,21 @@ export default {
     try {
       if (path === '/' || path === '/api/health') return json({ ok: true, service: 'wigsstock-sync' });
 
+      // Gate mutating endpoints behind the optional shared secret.
+      if (req.method === 'POST' && !authed(req, env)) return json({ error: 'unauthorized' }, 401);
+
       if (path === '/api/sync' && req.method === 'POST') {
         const body = await req.json();
         const countId = (body.count_id || '').trim();
         const device = (body.device || '').trim();
         const scans = body.scans || {};
         if (!countId || !device) return json({ error: 'count_id and device required' }, 400);
+        if (countId.length > MAX_ID_LEN || device.length > MAX_ID_LEN) return json({ error: 'count_id/device too long' }, 400);
 
         const now = Date.now();
-        const entries = Object.entries(scans);
+        const entries = Object.entries(scans)
+          .filter(([bc]) => bc && String(bc).length <= MAX_BARCODE_LEN)
+          .slice(0, MAX_SCANS_PER_SYNC);
         // chunk so we never exceed D1 batch limits on a big first sync
         let synced = 0;
         for (let i = 0; i < entries.length; i += 50) {

@@ -1,0 +1,10 @@
+{
+  "name": "wigsstock",
+  "version": "1.6.0",
+  "private": true,
+  "description": "WigsStock — inventory barcode scanner (no build step, vanilla JS PWA)",
+  "scripts": {
+    "test": "node tests/run.js",
+    "build": "node build-single.js"
+  }
+}

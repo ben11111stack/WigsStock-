@@ -337,3 +337,50 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
 }
 .bottomnav button svg { width: 21px; height: 21px; stroke-width: 1.65; }
 .bottomnav button.active { color: var(--primary); }
+
+/* ---------- v1.6 additions ---------- */
+.scan-tools { flex-wrap: wrap; }
+.scan-tools-btns { flex-wrap: wrap; justify-content: flex-end; }
+.icon-btn:disabled { opacity: .38; cursor: default; }
+.icon-btn:disabled:active { transform: none; }
+
+/* unsynced / pending badge */
+.pending-badge {
+  display: inline-block; margin-inline-start: 8px; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; vertical-align: middle;
+  background: color-mix(in oklab, var(--ok) 14%, var(--bg)); color: var(--ok);
+  border: 1px solid color-mix(in oklab, var(--ok) 32%, var(--line));
+}
+.pending-badge.pending-on {
+  background: color-mix(in oklab, var(--warn) 16%, var(--bg)); color: var(--warn);
+  border-color: color-mix(in oklab, var(--warn) 40%, var(--line));
+}
+
+/* batch / recent-scans panel */
+.batch-panel { margin-top: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.batch-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.batch-list { max-height: 300px; overflow-y: auto; }
+.batch-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid color-mix(in oklab, var(--line) 60%, transparent); }
+.batch-row:last-child { border-bottom: none; }
+.batch-ico { font-size: 15px; }
+.batch-code { font-family: ui-monospace, monospace; font-size: 15px; font-weight: 600; color: var(--ink); flex: 1; }
+.batch-undo { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-3); cursor: pointer; font-size: 14px; }
+.batch-undo:active { transform: scale(.9); }
+
+/* report search */
+.search-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.search-input {
+  flex: 1; padding: 11px 13px; font-family: inherit; font-size: 15px; color: var(--ink);
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.search-input:focus { outline: none; border-color: var(--primary); }
+
+/* clickable dashboard stats */
+.stat[data-jump] { cursor: pointer; transition: transform .08s, box-shadow .12s; }
+.stat[data-jump]:hover { border-color: color-mix(in oklab, var(--primary) 45%, var(--line)); }
+.stat[data-jump]:active { transform: scale(.97); }
+.stat[data-jump]:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* per-station mini bar */
+.mini-bar { display: inline-block; width: 90px; height: 8px; border-radius: 5px; background: var(--surface-2); overflow: hidden; vertical-align: middle; margin-inline-end: 6px; }
+.mini-bar > div { height: 100%; background: var(--primary); border-radius: 5px; }

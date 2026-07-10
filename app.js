@@ -23,8 +23,18 @@ const KNOWN_STATUSES = [
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.5.3';
+const APP_VERSION = '1.6.0';
 const CHANGELOG = [
+  { v: '1.6.0', notes: [
+    'חיפוש חי בדוח — מקלידים ברקוד ורואים מיד באיזו קטגוריה הוא',
+    'לחיצה על ריבוע בדאשבורד פותחת וקופצת ישר לנתונים שלו',
+    'פילוח לפי עמדה — כמה כל עובדת סרקה',
+    'כפתורי בטל/החזר (Undo/Redo) לסריקות + רשימת "סריקות אחרונות" עם ביטול מהיר',
+    'מונה "ממתינות לסנכרון" גלוי במסך הסריקה',
+    'ייצוא ל-Excel אמיתי (xlsx) — בלי ג\'יבריש בעברית',
+    'תצוגה מסודרת של כל הדוחות בתוך האפליקציה (לא רק הורדה)',
+    'התאמת ברקוד עמידה יותר (רווחים/אפסים מובילים)'
+  ] },
   { v: '1.5.3', notes: ['המצלמה משתחררת אוטומטית כשעוברים לאפליקציה אחרת (לא נשארת תפוסה)', 'המצלמה נכבית לבד אחרי 2 דקות ללא סריקה'] },
   { v: '1.5.2', notes: ['תיקון הפלאש בטלפונים עם כמה עדשות — מחפש אוטומטית את העדשה עם הפנס ומדליק אותה', 'מצב הפלאש נקרא מהחומרה (לא "דולק" כשאין אור)'] },
   { v: '1.5.1', notes: ['פתיחת מצלמה עמידה יותר — ניסיון חוזר עם הגדרות פשוטות כשהמצלמה תפוסה', 'הודעות שגיאה ברורות למצלמה (תפוסה / אין הרשאה / אין מצלמה)'] },
@@ -50,7 +60,10 @@ const state = {
   deviceId: '',      // stable fallback id if no station name is set
   sheetUrl: '',      // Google Sheets link the inventory is loaded/synced from
   writeUrl: '',      // Apps Script web-app URL for writing results back
-  lastResetSeen: 0   // cloud reset generation this device has applied
+  lastResetSeen: 0,  // cloud reset generation this device has applied
+  sessionLog: [],    // recent scans on THIS device: [{code, ts, kind}] (newest last, capped)
+  batchMode: false,  // show the live recent-scans list on the scan tab
+  apiKey: ''         // optional shared secret (only needed if the Worker enforces one)
 };
 
 const LS_KEY = 'wigsstock_v1';
@@ -69,6 +82,19 @@ function load() {
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+
+/* Normalize a barcode for matching. The sheet import and every scan pass through
+ * this, so the two sides always normalize identically:
+ *   - strip a BOM and Google-Sheets' leading text apostrophe ('01234)
+ *   - trim and remove any inner whitespace a scanner might inject
+ *   - drop leading zeros on purely-numeric codes so "01234" == "1234"
+ * (No barcodes currently start with 0, but this keeps future ones from
+ *  splitting into a false "missing" + "unknown" pair.) */
+function normBarcode(s) {
+  s = String(s == null ? '' : s).replace(/^﻿/, '').replace(/^'/, '').trim().replace(/\s+/g, '');
+  if (/^\d+$/.test(s)) s = s.replace(/^0+(\d)/, '$1');
+  return s;
+}
 
 /* =====================================================================
  * CSV parsing (handles quotes, commas, CRLF)
@@ -125,7 +151,7 @@ function importInventory(text) {
   const inv = {};
   let added = 0, unknownStatus = 0;
   for (const r of dataRows) {
-    const barcode = (r[map.barcodeCol] || '').trim();
+    const barcode = normBarcode(r[map.barcodeCol] || '');
     let status = (r[map.statusCol] || '').trim().toLowerCase();
     if (!barcode) continue;
     if (!KNOWN_STATUSES.includes(status)) {
@@ -198,26 +224,88 @@ function reconcile() {
 let lastScanTs = 0;
 let lastScanCode = '';
 
-function recordScan(rawCode) {
-  const code = String(rawCode).trim();
+// Undo/redo command stack (this device's own scans). Cloud counts are absolute
+// and idempotent, so decrementing then re-pushing never double-counts elsewhere.
+const undoStack = [];
+const redoStack = [];
+
+function recordScan(rawCode, opts) {
+  opts = opts || {};
+  const code = normBarcode(rawCode);
   if (!code) return;
   if (!hasStation()) { applyStationGate(); return; }   // never record without a station
 
   // Debounce: ignore the same code fired twice within 1.2s (camera repeats).
   const now = Date.now();
-  if (code === lastScanCode && now - lastScanTs < 1200) return;
+  if (!opts.fromHistory && code === lastScanCode && now - lastScanTs < 1200) return;
   lastScanCode = code; lastScanTs = now;
 
   const existing = state.scans[code];
   if (existing) existing.count++;
   else state.scans[code] = { count: 1, first: now };
   if (cloudEnabled()) { state.dirty[code] = true; schedulePush(); }
+
+  const known = code in state.inventory;
+  const kind = !known ? 'unknown' : existing ? 'dup' : 'ok';
+  logSession(code, kind);
+  if (!opts.fromHistory) { undoStack.push({ code }); redoStack.length = 0; updateUndoRedo(); }
   save();
 
   showScanFeedback(code, !!existing);
   renderReport();
   renderScanStats();
+  renderPending();
   armCameraIdle();   // scanning is activity — push the auto-off back
+}
+
+// Reverse one scan of `code` on this device (used by Undo and per-item removal).
+function unrecordScan(code) {
+  const s = state.scans[code];
+  if (!s) return false;
+  if (s.count > 1) s.count--; else delete state.scans[code];
+  if (cloudEnabled()) { state.dirty[code] = true; schedulePush(); }
+  // drop the most recent matching entry from the session log
+  for (let i = state.sessionLog.length - 1; i >= 0; i--) {
+    if (state.sessionLog[i].code === code) { state.sessionLog.splice(i, 1); break; }
+  }
+  save();
+  renderReport(); renderScanStats(); renderPending(); renderSessionLog();
+  return true;
+}
+
+function undoScan() {
+  const a = undoStack.pop();
+  if (!a) return;
+  if (unrecordScan(a.code)) { redoStack.push(a); updateUndoRedo(); flashBanner('↩️ בוטלה סריקה: ' + a.code, 'dup'); }
+  else updateUndoRedo();
+}
+
+function redoScan() {
+  const a = redoStack.pop();
+  if (!a) return;
+  recordScan(a.code, { fromHistory: true });
+  undoStack.push(a);
+  updateUndoRedo();
+}
+
+function updateUndoRedo() {
+  const u = $('#undoBtn'), r = $('#redoBtn');
+  if (u) u.disabled = undoStack.length === 0;
+  if (r) r.disabled = redoStack.length === 0;
+}
+
+// Keep a capped, persisted log of this device's scans for the batch/recent list.
+function logSession(code, kind) {
+  state.sessionLog.push({ code, ts: Date.now(), kind });
+  if (state.sessionLog.length > 400) state.sessionLog = state.sessionLog.slice(-400);
+  renderSessionLog();
+}
+
+function flashBanner(msg, kind) {
+  const banner = $('#scanBanner');
+  if (!banner) return;
+  banner.className = 'scan-banner ' + (kind || '');
+  banner.innerHTML = `<div class="msg">${esc(msg)}</div>`;
 }
 
 // Worker-facing feedback is deliberately status-agnostic: a scanned wig just
@@ -569,6 +657,36 @@ function renderScanStats() {
   set('#scanUnknown', r.unknown.length);
 }
 
+// How many scans still wait to reach the cloud (offline queue / in-flight).
+function renderPending() {
+  const n = cloudEnabled() ? Object.keys(state.dirty).length : 0;
+  $$('.pending-badge').forEach(el => {
+    el.textContent = n ? ('⏳ ' + n + ' ממתינות') : (cloudEnabled() ? '✅ מסונכרן' : '');
+    el.classList.toggle('hidden', !cloudEnabled());
+    el.classList.toggle('pending-on', n > 0);
+  });
+  setCloudStatus(n ? 'syncing' : 'ok');
+}
+
+// Live "recent scans" list for batch mode — newest first, with quick undo.
+function renderSessionLog() {
+  const wrap = $('#batchPanel');
+  if (!wrap) return;
+  wrap.classList.toggle('hidden', !state.batchMode);
+  if (!state.batchMode) return;
+  const log = state.sessionLog.slice(-60).reverse();
+  const cnt = $('#batchCount'); if (cnt) cnt.textContent = state.sessionLog.length;
+  const list = $('#batchList');
+  if (!list) return;
+  if (!log.length) { list.innerHTML = '<p class="muted small center">עדיין לא נסרק דבר בסבב הזה.</p>'; return; }
+  const icon = k => k === 'ok' ? '🟢' : k === 'dup' ? '🔁' : '🔴';
+  list.innerHTML = log.map(e =>
+    `<div class="batch-row"><span class="batch-ico">${icon(e.kind)}</span>` +
+    `<span class="batch-code">${esc(e.code)}</span>` +
+    `<button class="batch-undo" data-undo-code="${esc(e.code)}" title="בטל">✕</button></div>`
+  ).join('');
+}
+
 const CHEV = '<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
 function accCard(title, badge, desc, body, open) {
   return `<div class="acc${open ? ' open' : ''}">` +
@@ -594,14 +712,49 @@ function statusBreakdownTable() {
   return `<div class="scroll"><table><thead><tr><th>סטטוס</th><th>סה"כ</th><th>נסרקו</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+let reportQuery = '';
+
+// Scans attributed per station, from the cloud's per-barcode station list.
+// A barcode touched by two stations counts for each (best we can do from the
+// merged view) — labelled as "barcodes scanned" so the meaning is honest.
+function stationBreakdown() {
+  const detail = state.cloudDetail || {};
+  const byStation = {};
+  let any = false;
+  for (const bc in detail) {
+    const d = detail[bc];
+    const stations = (d && d.station ? String(d.station) : '').split(',').map(s => s.trim()).filter(Boolean);
+    for (const st of stations) { byStation[st] = (byStation[st] || 0) + 1; any = true; }
+  }
+  // fall back to this device's own scans when there's no cloud detail yet
+  if (!any) {
+    const me = deviceId();
+    const n = Object.keys(state.scans).length;
+    if (n) byStation[me] = n;
+  }
+  const rows = Object.entries(byStation).sort((a, b) => b[1] - a[1]);
+  if (!rows.length) return '<p class="muted small">אין נתוני עמדות עדיין.</p>';
+  const me = deviceId();
+  const total = rows.reduce((s, [, n]) => s + n, 0);
+  const body = rows.map(([st, n]) => {
+    const pct = total ? Math.round(n / total * 100) : 0;
+    const meTag = st === me ? ' <span class="tag instock">את/ה</span>' : '';
+    return `<tr><td>👤 ${esc(st)}${meTag}</td><td>${n.toLocaleString()}</td>` +
+      `<td><div class="mini-bar"><div style="width:${pct}%"></div></div><span class="muted small">${pct}%</span></td></tr>`;
+  }).join('');
+  return `<div class="scroll"><table><thead><tr><th>עמדה / עובדת</th><th>פאות שנסרקו</th><th>חלק</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
 function renderReport() {
   const r = reconcile();
   const el = $('#reportBody');
   if (!r.totalInventory) {
-    el.innerHTML = '<div class="card"><p class="muted">עדיין לא נטען מלאי. עברי ללשונית "טעינת מלאי".</p></div>';
+    el.innerHTML = '<div class="card"><p class="muted">עדיין לא נטען מלאי. עברי ללשונית "מלאי" כדי לטעון קובץ, או להגדרות → "מלאי מגוגל שיטס".</p></div>';
     return;
   }
 
+  const q = reportQuery.trim().toLowerCase();
+  const filt = (list) => q ? list.filter(i => String(i.barcode).toLowerCase().includes(q)) : list;
   const bcCol = { label: 'ברקוד', render: i => `<b>${esc(i.barcode)}</b>` };
   const statusCol = { label: 'סטטוס בשיטס', render: i =>
     `<span class="tag ${isInStore(i.status) ? 'instock' : 'other'}">${esc(i.status)}</span>` };
@@ -611,54 +764,71 @@ function renderReport() {
     return d && d.station ? esc(d.station) : '<span class="muted">—</span>';
   } };
   const delCol = { label: '', render: i =>
-    `<button class="del-btn" title="מחק סריקה" onclick='deleteScan(${JSON.stringify(i.barcode)})'>🗑</button>` };
+    `<button class="del-btn" data-del-code="${esc(i.barcode)}" title="מחק סריקה">🗑</button>` };
   const expected = r.expectedInStock;
   const pct = expected ? Math.round(r.ok.length / expected * 100) : 0;
   const cloudLine = cloudEnabled()
-    ? `<span class="muted small">☁️ ${state.countId} · ${state.cloudDevices || 0} עמדות</span>`
+    ? `<span class="muted small">☁️ ${esc(state.countId)} · ${state.cloudDevices || 0} עמדות</span>`
     : `<span class="muted small">מקומי</span>`;
+
+  const fOther = filt(r.foundOther), fMissing = filt(r.missing), fUnknown = filt(r.unknown),
+        fDup = filt(r.duplicates), fOk = filt(r.ok);
+  const openIf = (n) => q ? n > 0 : false;
 
   el.innerHTML = `
     <div class="card">
       <div class="rep-head">
         <h2>דוח ספירה</h2>
-        <button class="btn ghost small-btn" onclick="pullCloud();renderReport()">🔄 רענן</button>
+        <button class="btn ghost small-btn" data-report-refresh>🔄 רענן</button>
       </div>
       ${cloudLine}
       <div class="progress" title="${pct}%"><div class="progress-bar" style="width:${pct}%"></div></div>
       <p class="muted small">נסרקו <b>${r.ok.length.toLocaleString()}</b> מתוך <b>${expected.toLocaleString()}</b> שאמורות להיות בחנות (<b>${pct}%</b>)</p>
       <div class="stats">
-        <div class="stat total"><div class="num">${r.totalInventory.toLocaleString()}</div><div class="lbl">סה"כ במלאי (שיטס)</div></div>
-        <div class="stat"><div class="num">${r.totalScanned.toLocaleString()}</div><div class="lbl">נסרקו פיזית</div></div>
-        <div class="stat ok"><div class="num">${r.ok.length.toLocaleString()}</div><div class="lbl">✅ תקין (במלאי + נסרק)</div></div>
-        <div class="stat bad"><div class="num">${r.missing.length.toLocaleString()}</div><div class="lbl">❌ חסר (אמור בחנות, לא נסרק)</div></div>
-        <div class="stat warn"><div class="num">${r.foundOther.length.toLocaleString()}</div><div class="lbl">⚠️ בחנות אך מסומן אחרת</div></div>
-        <div class="stat unknown"><div class="num">${r.unknown.length.toLocaleString()}</div><div class="lbl">❓ ברקוד לא מוכר</div></div>
+        <div class="stat total" data-jump="acc-status" tabindex="0"><div class="num">${r.totalInventory.toLocaleString()}</div><div class="lbl">סה"כ במלאי (שיטס)</div></div>
+        <div class="stat" data-jump="acc-ok" tabindex="0"><div class="num">${r.totalScanned.toLocaleString()}</div><div class="lbl">נסרקו פיזית</div></div>
+        <div class="stat ok" data-jump="acc-ok" tabindex="0"><div class="num">${r.ok.length.toLocaleString()}</div><div class="lbl">✅ תקין (במלאי + נסרק)</div></div>
+        <div class="stat bad" data-jump="acc-missing" tabindex="0"><div class="num">${r.missing.length.toLocaleString()}</div><div class="lbl">❌ חסר (אמור בחנות, לא נסרק)</div></div>
+        <div class="stat warn" data-jump="acc-other" tabindex="0"><div class="num">${r.foundOther.length.toLocaleString()}</div><div class="lbl">⚠️ בחנות אך מסומן אחרת</div></div>
+        <div class="stat unknown" data-jump="acc-unknown" tabindex="0"><div class="num">${r.unknown.length.toLocaleString()}</div><div class="lbl">❓ ברקוד לא מוכר</div></div>
       </div>
-      <p class="muted small" style="margin-top:10px">צפוי בחנות (in-stock+consignment): <b>${expected.toLocaleString()}</b> · כפילויות: <b>${r.duplicates.length}</b></p>
+      <p class="muted small" style="margin-top:10px">צפוי בחנות (in-stock+consignment): <b>${expected.toLocaleString()}</b> · כפילויות: <b>${r.duplicates.length}</b> · הקישי על ריבוע לקפיצה לנתונים שלו</p>
+      <div class="search-row">
+        <input id="reportSearch" class="search-input" inputmode="search" autocomplete="off" placeholder="🔎 חיפוש ברקוד בכל הקטגוריות" value="${esc(reportQuery)}">
+        ${q ? `<span class="muted small">נמצאו: ${(fOther.length + fMissing.length + fUnknown.length + fOk.length).toLocaleString()}</span>` : ''}
+      </div>
     </div>
 
-    ${accCard('⚠️ בחנות אך מסומן אחרת', r.foundOther.length,
+    <div id="acc-other">${accCard('⚠️ בחנות אך מסומן אחרת', r.foundOther.length,
       'נסרקו פיזית אך לא רשומות כ-in-stock — צריך להחזיר ל-in-stock',
-      tableFor(r.foundOther, [bcCol, statusCol, stationCol, delCol]), r.foundOther.length > 0)}
+      tableFor(fOther, [bcCol, statusCol, stationCol, delCol]), r.foundOther.length > 0 || openIf(fOther.length))}</div>
 
-    ${accCard('❌ חסרות', r.missing.length,
+    <div id="acc-missing">${accCard('❌ חסרות', r.missing.length,
       'אמורות בחנות אך לא נסרקו — כנראה נמכרו/אבדו ולא עודכן',
-      tableFor(r.missing, [bcCol]))}
+      tableFor(fMissing, [bcCol]), openIf(fMissing.length))}</div>
 
-    ${accCard('❓ ברקודים לא מוכרים', r.unknown.length,
+    <div id="acc-unknown">${accCard('❓ ברקודים לא מוכרים', r.unknown.length,
       'נסרקו אך לא קיימים בקובץ המלאי',
-      tableFor(r.unknown, [bcCol, countCol, stationCol, delCol]))}
+      tableFor(fUnknown, [bcCol, countCol, stationCol, delCol]), openIf(fUnknown.length))}</div>
 
-    ${accCard('🔁 כפילויות', r.duplicates.length, 'נסרקו יותר מפעם אחת',
-      tableFor(r.duplicates, [bcCol, countCol]))}
+    <div id="acc-dup">${accCard('🔁 כפילויות', r.duplicates.length, 'נסרקו יותר מפעם אחת',
+      tableFor(fDup, [bcCol, countCol]), openIf(fDup.length))}</div>
 
-    ${accCard('✅ תקין', r.ok.length, 'במלאי ונסרקו כמו שצריך',
-      tableFor(r.ok, [bcCol, stationCol, delCol]))}
+    <div id="acc-ok">${accCard('✅ תקין', r.ok.length, 'במלאי ונסרקו כמו שצריך',
+      tableFor(fOk, [bcCol, stationCol, delCol]), openIf(fOk.length))}</div>
 
-    ${accCard('📋 פילוח לפי סטטוס בשיטס', r.totalInventory.toLocaleString(),
-      'כמה מכל סטטוס — וכמה נסרקו', statusBreakdownTable())}
+    <div id="acc-stations">${accCard('👥 פילוח לפי עמדה / עובדת', Object.keys(state.cloudDetail || {}).length ? (state.cloudDevices || '') : '',
+      'כמה פאות סרקה כל עמדה', stationBreakdown())}</div>
+
+    <div id="acc-status">${accCard('📋 פילוח לפי סטטוס בשיטס', r.totalInventory.toLocaleString(),
+      'כמה מכל סטטוס — וכמה נסרקו', statusBreakdownTable())}</div>
   `;
+
+  const search = $('#reportSearch');
+  if (search) {
+    search.oninput = () => { reportQuery = search.value; renderReport(); };
+    if (q) { const pos = search.value.length; search.focus(); try { search.setSelectionRange(pos, pos); } catch (e) {} }
+  }
 }
 
 function renderInventoryStatus() {
@@ -676,6 +846,11 @@ function renderInventoryStatus() {
 
 /* =====================================================================
  * Export
+ * ---------------------------------------------------------------------
+ * Each report is built once as a rows array (header + data). The same
+ * array feeds three sinks: a CSV download, a real .xlsx download (opens
+ * cleanly in Excel with Hebrew — no charset guessing), and an in-app
+ * preview table. Build the data once, render it three ways.
  * ===================================================================== */
 function toCSV(rows) {
   return rows.map(r => r.map(f => {
@@ -694,7 +869,8 @@ function stamp() {
   return (state.session ? state.session.replace(/\s+/g, '-') + '_' : '') + 'wigsstock';
 }
 
-function exportFull() {
+/* ---------- Report data builders (header row first) ---------- */
+function dataReconciliation() {
   const r = reconcile();
   const rows = [['barcode', 'category', 'sheet_status', 'scan_count']];
   const push = (list, cat) => list.forEach(i =>
@@ -703,22 +879,149 @@ function exportFull() {
   push(r.missing, 'missing');
   push(r.unknown, 'unknown-barcode');
   push(r.ok, 'ok');
-  download(stamp() + '_reconciliation.csv', toCSV(rows));
+  return rows;
 }
-
-function exportUpdates() {
-  // Suggested status corrections to paste back into the sheet.
+function dataUpdates() {
   const r = reconcile();
   const rows = [['barcode', 'current_status', 'suggested_status', 'reason']];
   r.foundOther.forEach(i => rows.push([i.barcode, i.status, IN_STOCK, 'נסרק בחנות']));
   r.missing.forEach(i => rows.push([i.barcode, IN_STOCK, 'missing', 'רשום in-stock אך לא נסרק']));
-  download(stamp() + '_status_updates.csv', toCSV(rows));
+  return rows;
+}
+function dataScans() {
+  const rows = [['barcode', 'scan_count']];
+  Object.entries(effectiveScans()).forEach(([bc, s]) => rows.push([bc, s.count]));
+  return rows;
+}
+function dataStations() {
+  const detail = state.cloudDetail || {};
+  const by = {};
+  for (const bc in detail) {
+    (String(detail[bc].station || '').split(',').map(s => s.trim()).filter(Boolean)).forEach(st => by[st] = (by[st] || 0) + 1);
+  }
+  if (!Object.keys(by).length) by[deviceId()] = Object.keys(state.scans).length;
+  const rows = [['station', 'barcodes_scanned']];
+  Object.entries(by).sort((a, b) => b[1] - a[1]).forEach(([st, n]) => rows.push([st, n]));
+  return rows;
 }
 
-function exportScans() {
-  const rows = [['barcode', 'scan_count']];
-  Object.entries(state.scans).forEach(([bc, s]) => rows.push([bc, s.count]));
-  download(stamp() + '_raw_scans.csv', toCSV(rows));
+/* ---------- Minimal, dependency-free .xlsx writer ----------
+ * An .xlsx is a ZIP of XML parts. We store parts uncompressed (a valid ZIP
+ * "stored" entry needs only a CRC-32), and write every cell as an inline
+ * string or number — so no shared-strings table and no deflate needed. This
+ * is enough for Excel/Sheets to open it with perfect UTF-8 Hebrew. */
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+const UTF8 = new TextEncoder();
+function xmlCell(v, col, row) {
+  const ref = colName(col) + row;
+  if (typeof v === 'number' && isFinite(v)) return `<c r="${ref}" t="n"><v>${v}</v></c>`;
+  const s = String(v == null ? '' : v);
+  return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${esc(s)}</t></is></c>`;
+}
+function colName(n) { let s = ''; n++; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = (n - m - 1) / 26; } return s; }
+function sheetXml(rows) {
+  const body = rows.map((r, ri) =>
+    `<row r="${ri + 1}">` + r.map((v, ci) => xmlCell(v, ci, ri + 1)).join('') + '</row>').join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`;
+}
+// sheets: [{name, rows}]
+function buildXlsx(sheets) {
+  const parts = [];
+  parts.push(['[Content_Types].xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
+    sheets.map((s, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('') + `</Types>`]);
+  parts.push(['_rels/.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`]);
+  parts.push(['xl/workbook.xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>` +
+    sheets.map((s, i) => `<sheet name="${esc(s.name).slice(0, 31)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('') + `</sheets></workbook>`]);
+  parts.push(['xl/_rels/workbook.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('') + `</Relationships>`]);
+  sheets.forEach((s, i) => parts.push([`xl/worksheets/sheet${i + 1}.xml`, sheetXml(s.rows)]));
+
+  // assemble a "stored" (uncompressed) ZIP
+  const chunks = [], central = [];
+  let offset = 0;
+  const u16 = n => [n & 0xFF, (n >>> 8) & 0xFF];
+  const u32 = n => [n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF];
+  for (const [name, content] of parts) {
+    const nameBytes = UTF8.encode(name);
+    const data = UTF8.encode(content);
+    const crc = crc32(data);
+    const local = [].concat(u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0),
+      u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0));
+    chunks.push(new Uint8Array(local), nameBytes, data);
+    const cen = [].concat(u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0),
+      u32(crc), u32(data.length), u32(data.length), u16(nameBytes.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset));
+    central.push(new Uint8Array(cen), nameBytes);
+    offset += local.length + nameBytes.length + data.length;
+  }
+  const centralStart = offset;
+  let centralSize = 0;
+  central.forEach(c => centralSize += c.length);
+  const end = [].concat(u32(0x06054b50), u16(0), u16(0), u16(parts.length), u16(parts.length),
+    u32(centralSize), u32(centralStart), u16(0));
+  const all = [...chunks, ...central, new Uint8Array(end)];
+  let total = 0; all.forEach(a => total += a.length);
+  const out = new Uint8Array(total);
+  let p = 0; for (const a of all) { out.set(a, p); p += a.length; }
+  return out;
+}
+function downloadXlsx(filename, sheets) {
+  const blob = new Blob([buildXlsx(sheets)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ---------- Export actions ---------- */
+function exportFull() { download(stamp() + '_reconciliation.csv', toCSV(dataReconciliation())); }
+function exportUpdates() { download(stamp() + '_status_updates.csv', toCSV(dataUpdates())); }
+function exportScans() { download(stamp() + '_raw_scans.csv', toCSV(dataScans())); }
+
+// One Excel workbook with every report as its own tab.
+function exportExcel() {
+  downloadXlsx(stamp() + '_report.xlsx', [
+    { name: 'דוח התאמה', rows: dataReconciliation() },
+    { name: 'עדכוני סטטוס', rows: dataUpdates() },
+    { name: 'סריקות גולמיות', rows: dataScans() },
+    { name: 'לפי עמדה', rows: dataStations() }
+  ]);
+}
+
+// Render every report as a formatted, collapsible preview inside the app.
+function renderExportPreview() {
+  const el = $('#exportPreview');
+  if (!el) return;
+  if (!Object.keys(state.inventory).length) {
+    el.innerHTML = '<div class="card"><p class="muted small">טעני מלאי כדי לראות תצוגה מקדימה של הדוחות.</p></div>';
+    return;
+  }
+  const tbl = (rows) => {
+    if (rows.length < 2) return '<p class="muted small">אין נתונים.</p>';
+    const head = rows[0].map(h => `<th>${esc(h)}</th>`).join('');
+    const body = rows.slice(1, 401).map(r => '<tr>' + r.map(c => `<td>${esc(c)}</td>`).join('') + '</tr>').join('');
+    const more = rows.length > 401 ? `<p class="muted small">מוצגות 400 מתוך ${(rows.length - 1).toLocaleString()}. ההורדה כוללת הכל.</p>` : '';
+    return `<div class="scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
+  };
+  const recon = dataReconciliation(), upd = dataUpdates(), raw = dataScans(), st = dataStations();
+  el.innerHTML =
+    accCard('📄 דוח התאמה מלא', (recon.length - 1).toLocaleString(), 'כל פאה עם הקטגוריה שלה', tbl(recon), true) +
+    accCard('✏️ עדכוני סטטוס מוצעים', (upd.length - 1).toLocaleString(), 'התיקונים להחזרה לשיטס', tbl(upd)) +
+    accCard('👥 פילוח לפי עמדה', (st.length - 1).toLocaleString(), 'כמה סרקה כל עמדה', tbl(st)) +
+    accCard('🗂 סריקות גולמיות', (raw.length - 1).toLocaleString(), 'גיבוי / מיזוג', tbl(raw));
 }
 
 /* Merge another device's raw-scans CSV into this one (for multi-worker counts). */
@@ -728,7 +1031,7 @@ function mergeScans(text) {
   const hasHeader = rows.length && isNaN(Number((rows[0][0] || '').trim()));
   const data = hasHeader ? rows.slice(1) : rows;
   for (const r of data) {
-    const bc = (r[0] || '').trim();
+    const bc = normBarcode(r[0] || '');
     const cnt = parseInt(r[1], 10) || 1;
     if (!bc) continue;
     if (state.scans[bc]) state.scans[bc].count += cnt;
@@ -748,6 +1051,12 @@ function mergeScans(text) {
  * ===================================================================== */
 function cloudEnabled() { return !!(state.cloudUrl && state.countId); }
 function cloudBase() { return state.cloudUrl.replace(/\/+$/, ''); }
+// JSON headers for POSTs, plus the shared secret if one is configured.
+function cloudHeaders() {
+  const h = { 'Content-Type': 'application/json' };
+  if (state.apiKey) h['x-api-key'] = state.apiKey;
+  return h;
+}
 function deviceId() { return (state.session && state.session.trim()) || state.deviceId; }
 
 let syncTimer = null, retryTimer = null, syncing = false, pollTimer = null;
@@ -768,7 +1077,7 @@ async function pushCloud() {
   barcodes.forEach(b => { if (state.scans[b]) scans[b] = state.scans[b].count; });
   try {
     const res = await fetch(cloudBase() + '/api/sync', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: cloudHeaders(),
       body: JSON.stringify({ count_id: state.countId, device: deviceId(), scans })
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -823,11 +1132,12 @@ async function deleteScan(barcode) {
   delete state.dirty[barcode];
   if (state.cloudScans) delete state.cloudScans[barcode];
   if (state.cloudDetail) delete state.cloudDetail[barcode];
-  save(); renderReport(); renderScanStats();
+  state.sessionLog = state.sessionLog.filter(e => e.code !== barcode);
+  save(); renderReport(); renderScanStats(); renderPending(); renderSessionLog();
   if (cloudEnabled()) {
     try {
       const r = await fetch(cloudBase() + '/api/delete-scan', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: cloudHeaders(),
         body: JSON.stringify({ count_id: state.countId, barcode })
       });
       const j = await r.json().catch(() => ({}));
@@ -964,6 +1274,7 @@ function showTab(name) {
   $$('nav button').forEach(b => b.classList.toggle('active', b.id === 'tab-' + name));
   if (wasScan && name !== 'scan') stopCamera();       // free the camera when leaving
   if (name === 'report') { renderReport(); if (cloudEnabled()) pullCloud(); }   // refresh across stations
+  if (name === 'export') renderExportPreview();
   if (name === 'scan') {
     // require a station name first; start camera within the tap so iOS allows it
     if (applyStationGate()) { setTimeout(() => $('#stationGateInput').focus(), 60); }
@@ -1007,6 +1318,11 @@ function init() {
     countIdEl.value = state.countId || '';
     cloudUrlEl.addEventListener('change', () => { state.cloudUrl = cloudUrlEl.value.trim(); applyCloudConfig(); });
     countIdEl.addEventListener('change', () => { state.countId = countIdEl.value.trim(); applyCloudConfig(); });
+    const apiKeyEl = $('#apiKey');
+    if (apiKeyEl) {
+      apiKeyEl.value = state.apiKey || '';
+      apiKeyEl.addEventListener('change', () => { state.apiKey = apiKeyEl.value.trim(); save(); });
+    }
     $('#cloudTest').addEventListener('click', async () => {
       if (!state.cloudUrl) { alert('הזיני קודם כתובת שרת'); return; }
       try {
@@ -1054,6 +1370,31 @@ function init() {
     const head = e.target.closest('.acc-head');
     if (head && head.parentElement && head.parentElement.classList.contains('acc')) {
       head.parentElement.classList.toggle('open');
+      return;
+    }
+    // delete-scan buttons (event delegation — no inline onclick)
+    const del = e.target.closest('[data-del-code]');
+    if (del) { deleteScan(del.getAttribute('data-del-code')); return; }
+    // per-item quick undo in the batch list
+    const bu = e.target.closest('[data-undo-code]');
+    if (bu) { unrecordScan(bu.getAttribute('data-undo-code')); return; }
+    // report refresh button
+    if (e.target.closest('[data-report-refresh]')) { if (cloudEnabled()) pullCloud(); renderReport(); return; }
+    // clickable dashboard stat → open + scroll to its category
+    const stat = e.target.closest('[data-jump]');
+    if (stat) {
+      const target = document.getElementById(stat.getAttribute('data-jump'));
+      const acc = target && target.querySelector('.acc');
+      if (acc) {
+        acc.classList.add('open');
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  });
+  // keyboard access for the clickable stats
+  document.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-jump]')) {
+      e.preventDefault(); e.target.click();
     }
   });
 
@@ -1109,31 +1450,49 @@ function init() {
   // reset scans
   $('#resetScans').addEventListener('click', async () => {
     if (!confirm('לאפס את כל הסריקות של הספירה הזו?\n(כולל בענן — לכל העמדות. המלאי יישאר)')) return;
-    state.scans = {}; state.dirty = {}; state.cloudScans = {}; save();
+    state.scans = {}; state.dirty = {}; state.cloudScans = {}; state.sessionLog = [];
+    undoStack.length = 0; redoStack.length = 0; updateUndoRedo();
+    save();
     if (cloudEnabled()) {
       try {
         const rr = await fetch(cloudBase() + '/api/reset', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: cloudHeaders(),
           body: JSON.stringify({ count_id: state.countId })
         });
         const rj = await rr.json().catch(() => ({}));
         if (rj.reset_at) { state.lastResetSeen = rj.reset_at; save(); }   // don't re-trigger on our own reset
       } catch (e) { alert('אופס מקומי בוצע, אך לא הצלחתי לאפס בענן: ' + e.message); }
     }
-    renderReport(); renderScanStats();
+    renderReport(); renderScanStats(); renderPending(); renderSessionLog();
     $('#scanBanner').className = 'scan-banner';
     $('#scanBanner').innerHTML = '<div class="msg muted">מוכן לסריקה…</div>';
   });
+
+  // undo / redo / batch mode
+  const undoBtn = $('#undoBtn'), redoBtn = $('#redoBtn'), batchBtn = $('#batchBtn');
+  if (undoBtn) undoBtn.addEventListener('click', undoScan);
+  if (redoBtn) redoBtn.addEventListener('click', redoScan);
+  if (batchBtn) batchBtn.addEventListener('click', () => {
+    state.batchMode = !state.batchMode; save();
+    batchBtn.classList.toggle('active', state.batchMode);
+    renderSessionLog();
+  });
+  if (batchBtn) batchBtn.classList.toggle('active', state.batchMode);
+  const batchClear = $('#batchClear');
+  if (batchClear) batchClear.addEventListener('click', () => { state.sessionLog = []; save(); renderSessionLog(); });
+  updateUndoRedo();
 
   // export
   $('#expFull').addEventListener('click', exportFull);
   $('#expUpdates').addEventListener('click', exportUpdates);
   $('#expScans').addEventListener('click', exportScans);
+  const expExcel = $('#expExcel');
+  if (expExcel) expExcel.addEventListener('click', exportExcel);
   $('#mergeFile').addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => alert('מוזגו ' + mergeScans(reader.result) + ' סריקות.');
+    reader.onload = () => { alert('מוזגו ' + mergeScans(reader.result) + ' סריקות.'); renderExportPreview(); };
     reader.readAsText(file, 'UTF-8');
   });
 
@@ -1141,6 +1500,8 @@ function init() {
   renderInventoryStatus();
   renderScanStats();
   renderReport();
+  renderPending();
+  renderSessionLog();
 
   // scan tab is the default landing view; seed history so back walks tabs
   const start = 'scan';
@@ -1191,7 +1552,7 @@ async function loadFromSheet(alertOnError) {
     if (alertOnError && cloudEnabled()) {
       try {
         await fetch(cloudBase() + '/api/config', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers: cloudHeaders(),
           body: JSON.stringify({ count_id: state.countId, sheet_url: state.sheetUrl })
         });
       } catch (e) { /* non-fatal */ }
@@ -1207,7 +1568,7 @@ async function registerScriptUrl() {
   if (!cloudEnabled() || !state.writeUrl) return;
   try {
     await fetch(cloudBase() + '/api/config', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: cloudHeaders(),
       body: JSON.stringify({ count_id: state.countId, script_url: state.writeUrl })
     });
   } catch (e) { /* non-fatal */ }
@@ -1224,7 +1585,7 @@ async function writeToSheet() {
   try {
     await registerScriptUrl();   // also turns on auto-write from now on
     const r = await fetch(cloudBase() + '/api/writeback', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: cloudHeaders(),
       body: JSON.stringify({ script_url: state.writeUrl, count_id: state.countId })
     });
     const j = await r.json().catch(() => ({}));
@@ -1235,4 +1596,9 @@ async function writeToSheet() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', init);
+if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', init);
+
+// Expose pure logic for the Node test runner (no effect in the browser).
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { normBarcode, parseCSV, detectColumns, importInventory, reconcile, toCSV, colName, crc32, buildXlsx, state, isInStore, KNOWN_STATUSES };
+}
