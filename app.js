@@ -23,8 +23,9 @@ const KNOWN_STATUSES = [
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.5.0';
 const CHANGELOG = [
+  { v: '1.5.0', notes: ['הגדרות ודוחות מסודרים באקורדיונים (מתקפלים)', 'שם הספירה הוסתר (בהגדרות מתקדמות)'] },
   { v: '1.4.1', notes: ['תיקון כפתור הפלאש — מוצג כשהמצלמה פועלת ומנסה להדליק בכל מכשיר שתומך'] },
   { v: '1.4.0', notes: ['לוגו ומיתוג WigsStock', 'כפתור פלאש (פנס) למצלמה', 'שדה הקלדה גלוי תמיד + כפתור "רשום" בשורה', 'התראת עדכון כשיש גרסה חדשה', 'רשימת גרסאות בהגדרות'] },
   { v: '1.3.0', notes: ['טאב הגדרות מרוכז', 'שם עמדה חובה לפני סריקה', 'הדוח מציג מי סרק כל פאה', 'מחיקה/תיקון סריקה שגויה', 'סנכרון מהיר (~4ש\') בין עמדות'] },
@@ -426,6 +427,15 @@ function renderScanStats() {
   set('#scanUnknown', r.unknown.length);
 }
 
+const CHEV = '<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+function accCard(title, badge, desc, body, open) {
+  return `<div class="acc${open ? ' open' : ''}">` +
+    `<button class="acc-head"><span class="acc-titles"><span class="acc-title">${title}</span>` +
+    `${desc ? `<span class="acc-sub">${desc}</span>` : ''}</span>` +
+    `<span class="badge">${badge}</span>${CHEV}</button>` +
+    `<div class="acc-body">${body}</div></div>`;
+}
+
 function statusBreakdownTable() {
   const inv = state.inventory, scans = effectiveScans();
   const totals = {}, scanned = {};
@@ -486,38 +496,26 @@ function renderReport() {
       <p class="muted small" style="margin-top:10px">צפוי בחנות (in-stock+consignment): <b>${expected.toLocaleString()}</b> · כפילויות: <b>${r.duplicates.length}</b></p>
     </div>
 
-    <div class="card reclist">
-      <h3>📋 פילוח לפי סטטוס בשיטס</h3>
-      ${statusBreakdownTable()}
-    </div>
+    ${accCard('⚠️ בחנות אך מסומן אחרת', r.foundOther.length,
+      'נסרקו פיזית אך לא רשומות כ-in-stock — צריך להחזיר ל-in-stock',
+      tableFor(r.foundOther, [bcCol, statusCol, stationCol, delCol]), r.foundOther.length > 0)}
 
-    <div class="card reclist">
-      <h3>⚠️ בחנות אך מסומן אחרת <span class="badge">${r.foundOther.length}</span></h3>
-      <p class="muted small">נסרקו פיזית אבל בשיטס לא רשומות כ-in-stock (למשל "נמכר"). צריך להחזיר ל-in-stock.</p>
-      ${tableFor(r.foundOther, [bcCol, statusCol, stationCol, delCol])}
-    </div>
+    ${accCard('❌ חסרות', r.missing.length,
+      'אמורות בחנות אך לא נסרקו — כנראה נמכרו/אבדו ולא עודכן',
+      tableFor(r.missing, [bcCol]))}
 
-    <div class="card reclist">
-      <h3>❌ חסרות <span class="badge">${r.missing.length}</span></h3>
-      <p class="muted small">רשומות כ-in-stock אבל לא נסרקו — כנראה נמכרו/אבדו ולא עודכן.</p>
-      ${tableFor(r.missing, [bcCol])}
-    </div>
+    ${accCard('❓ ברקודים לא מוכרים', r.unknown.length,
+      'נסרקו אך לא קיימים בקובץ המלאי',
+      tableFor(r.unknown, [bcCol, countCol, stationCol, delCol]))}
 
-    <div class="card reclist">
-      <h3>❓ ברקודים לא מוכרים <span class="badge">${r.unknown.length}</span></h3>
-      <p class="muted small">נסרקו אך לא קיימים בקובץ המלאי.</p>
-      ${tableFor(r.unknown, [bcCol, countCol, stationCol, delCol])}
-    </div>
+    ${accCard('🔁 כפילויות', r.duplicates.length, 'נסרקו יותר מפעם אחת',
+      tableFor(r.duplicates, [bcCol, countCol]))}
 
-    <div class="card reclist">
-      <h3>🔁 כפילויות <span class="badge">${r.duplicates.length}</span></h3>
-      ${tableFor(r.duplicates, [bcCol, countCol])}
-    </div>
+    ${accCard('✅ תקין', r.ok.length, 'במלאי ונסרקו כמו שצריך',
+      tableFor(r.ok, [bcCol, stationCol, delCol]))}
 
-    <div class="card reclist">
-      <h3>✅ תקין <span class="badge">${r.ok.length}</span></h3>
-      ${tableFor(r.ok, [bcCol, stationCol, delCol])}
-    </div>
+    ${accCard('📋 פילוח לפי סטטוס בשיטס', r.totalInventory.toLocaleString(),
+      'כמה מכל סטטוס — וכמה נסרקו', statusBreakdownTable())}
   `;
 }
 
@@ -896,6 +894,14 @@ function init() {
     showTab(st.tab || 'scan');
   });
 
+  // accordions (settings + report) — tap header to expand/collapse
+  document.addEventListener('click', (e) => {
+    const head = e.target.closest('.acc-head');
+    if (head && head.parentElement && head.parentElement.classList.contains('acc')) {
+      head.parentElement.classList.toggle('open');
+    }
+  });
+
   // inventory load
   $('#invFile').addEventListener('change', (e) => {
     const file = e.target.files[0];
@@ -989,6 +995,7 @@ function init() {
 
 function renderVersions() {
   const cur = $('#curVersion'); if (cur) cur.textContent = APP_VERSION;
+  const sub = $('#curVersionSub'); if (sub) sub.textContent = 'גרסה ' + APP_VERSION;
   const el = $('#changelog'); if (!el) return;
   el.innerHTML = CHANGELOG.map(c =>
     `<div class="ver"><b>גרסה ${esc(c.v)}</b><ul>${c.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>`

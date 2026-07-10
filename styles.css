@@ -288,6 +288,26 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
   background: var(--surface-2); color: var(--ink-3); margin-inline-start: auto;
 }
 
+/* ---------- Accordions ---------- */
+.acc {
+  margin: 6px 14px; border: 1px solid var(--line); border-radius: 15px;
+  background: var(--bg); overflow: hidden;
+}
+.acc-head {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 14px 15px; background: none; border: none; cursor: pointer;
+  font-family: inherit; text-align: right; color: var(--ink);
+}
+.acc-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.acc-title { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.acc-sub { font-size: 12px; font-weight: 500; color: var(--ink-3); margin-top: 2px; }
+.acc-head .badge { margin-inline-start: 0; }
+.acc-head .chev { flex: none; color: var(--ink-3); transition: transform .2s; }
+.acc.open .chev { transform: rotate(180deg); }
+.acc-body { display: none; padding: 0 15px 15px; }
+.acc.open .acc-body { display: block; }
+.acc-body .btn { margin-top: 8px; }
+
 /* ---------- Report ---------- */
 .rep-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .rep-head h2 { margin: 0; }

@@ -139,59 +139,84 @@
 
     <!-- ==================== SETTINGS ==================== -->
     <section id="panel-settings" class="tab">
-      <div class="sec-head" style="padding-inline:18px">עמדה ומשתמש</div>
-      <div class="card">
-        <label class="fld">שם עמדה / משתמש <span style="color:var(--bad)">(חובה)</span>
-          <input id="sessionName" autocomplete="off" placeholder="למשל: יעל / קומה 2" maxlength="24">
-        </label>
-        <label class="fld">שם ספירה (זהה בכל העמדות)
-          <input id="countId" autocomplete="off" placeholder="main">
-        </label>
-        <div class="hint">כל טלפון = שם עמדה משלו. אותו "שם ספירה" בכל המכשירים = ספירה משותפת אחת.</div>
-      </div>
+      <div style="height:6px"></div>
 
-      <div class="sec-head" style="padding-inline:18px">מלאי מגוגל שיטס</div>
-      <div class="card">
-        <p class="muted small">המלאי נטען מהקישור ומתרענן בכל פתיחה, בכל העמדות. הגיליון חייב להיות משותף ל"כל מי שיש לו הקישור — מציג".</p>
-        <div class="spacer"></div>
-        <label class="fld">קישור לגיליון
-          <input id="sheetUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/.../edit">
-        </label>
-        <button class="btn" id="sheetLoad">טען מהשיטס</button>
-        <p class="small" id="sheetNote" style="margin:8px 0 0"></p>
-      </div>
-
-      <div class="sec-head" style="padding-inline:18px">סנכרון ענן</div>
-      <div class="card">
-        <div id="cloudStatus" style="margin-bottom:10px"></div>
-        <div class="row">
-          <button class="btn secondary small-btn" id="cloudTest">בדוק חיבור</button>
-          <button class="btn ghost small-btn" id="cloudPull">משוך מהענן</button>
-        </div>
-        <details>
-          <summary class="muted small">הגדרות מתקדמות (כתובת שרת)</summary>
-          <div class="spacer"></div>
-          <label class="fld">כתובת השרת (Worker URL)
-            <input id="cloudUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://wigsstock-sync....workers.dev">
+      <div class="acc open">
+        <button class="acc-head">
+          <span class="acc-titles"><span class="acc-title">👤 עמדה ומשתמש</span><span class="acc-sub">שם העמדה — חובה לפני סריקה</span></span>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <label class="fld">שם עמדה / משתמש <span style="color:var(--bad)">(חובה)</span>
+            <input id="sessionName" autocomplete="off" placeholder="למשל: יעל / קומה 2" maxlength="24">
           </label>
-        </details>
+          <div class="hint">כל טלפון מקבל שם עמדה משלו — ככה יודעים מי סרק כל פאה.</div>
+        </div>
       </div>
 
-      <div class="sec-head" style="padding-inline:18px">כתיבה חזרה לשיטס</div>
-      <div class="card">
-        <p class="muted small">כותב 3 עמודות — <b>נסרק</b> · <b>תאריך סריקה</b> · <b>עמדה</b> — ומעדכן <b>אוטומטית תוך ~5 שניות מסריקה</b>. לא נוגע בעמודות המקוריות. דורש סקריפט חד-פעמי (<b>worker/sheets-writeback.gs</b>).</p>
-        <div class="spacer"></div>
-        <label class="fld">קישור Apps Script (Web app)
-          <input id="writeUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec">
-        </label>
-        <button class="btn" id="writeBtn">כתוב עכשיו לשיטס</button>
-        <p class="small" id="writeNote" style="margin:8px 0 0"></p>
+      <div class="acc">
+        <button class="acc-head">
+          <span class="acc-titles"><span class="acc-title">📄 מלאי מגוגל שיטס</span><span class="acc-sub">טעינת המלאי מקישור לגיליון</span></span>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <p class="muted small">נטען ומתרענן בכל פתיחה, בכל העמדות. הגיליון חייב להיות משותף ל"כל מי שיש לו הקישור — מציג".</p>
+          <label class="fld" style="margin-top:10px">קישור לגיליון
+            <input id="sheetUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/.../edit">
+          </label>
+          <button class="btn" id="sheetLoad">טען מהשיטס</button>
+          <p class="small" id="sheetNote" style="margin:8px 0 0"></p>
+        </div>
       </div>
 
-      <div class="sec-head" style="padding-inline:18px">גרסאות ועדכונים</div>
-      <div class="card">
-        <p class="muted small">גרסה נוכחית: <b id="curVersion">—</b></p>
-        <div id="changelog" class="changelog"></div>
+      <div class="acc">
+        <button class="acc-head">
+          <span class="acc-titles"><span class="acc-title">☁️ סנכרון ענן</span><span class="acc-sub">מצב הסנכרון בין העמדות</span></span>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div id="cloudStatus" style="margin-bottom:10px"></div>
+          <div class="row">
+            <button class="btn secondary small-btn" id="cloudTest">בדוק חיבור</button>
+            <button class="btn ghost small-btn" id="cloudPull">משוך מהענן</button>
+          </div>
+          <details style="margin-top:10px">
+            <summary class="muted small">הגדרות מתקדמות</summary>
+            <label class="fld" style="margin-top:10px">שם ספירה (זהה בכל העמדות)
+              <input id="countId" autocomplete="off" placeholder="main">
+            </label>
+            <label class="fld">כתובת השרת (Worker URL)
+              <input id="cloudUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://wigsstock-sync....workers.dev">
+            </label>
+            <div class="hint">"שם ספירה" מאגד את כל העמדות לספירה אחת. השאירו main אם יש ספירה אחת.</div>
+          </details>
+        </div>
+      </div>
+
+      <div class="acc">
+        <button class="acc-head">
+          <span class="acc-titles"><span class="acc-title">✏️ כתיבה חזרה לשיטס</span><span class="acc-sub">נסרק / תאריך / עמדה — אוטומטי</span></span>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <p class="muted small">כותב 3 עמודות — <b>נסרק</b> · <b>תאריך סריקה</b> · <b>עמדה</b> — אוטומטית תוך ~5 שניות. לא נוגע בעמודות המקוריות. דורש סקריפט חד-פעמי (<b>worker/sheets-writeback.gs</b>).</p>
+          <label class="fld" style="margin-top:10px">קישור Apps Script (Web app)
+            <input id="writeUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec">
+          </label>
+          <button class="btn" id="writeBtn">כתוב עכשיו לשיטס</button>
+          <p class="small" id="writeNote" style="margin:8px 0 0"></p>
+        </div>
+      </div>
+
+      <div class="acc">
+        <button class="acc-head">
+          <span class="acc-titles"><span class="acc-title">ℹ️ גרסאות ועדכונים</span><span class="acc-sub" id="curVersionSub">גרסה נוכחית</span></span>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <p class="muted small">גרסה נוכחית: <b id="curVersion">—</b></p>
+          <div id="changelog" class="changelog"></div>
+        </div>
       </div>
     </section>
 
