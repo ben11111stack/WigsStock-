@@ -818,8 +818,11 @@ const KNOWN_STATUSES = [
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.7.1';
 const CHANGELOG = [
+  { v: '1.7.1', notes: [
+    'תיקון עדכונים "תקועים" — קבצי הליבה נמשכים תמיד טריים מהרשת, ובדיקת עדכון יזומה בכל פתיחה'
+  ] },
   { v: '1.7.0', notes: [
     'עיצוב מחדש יוקרתי — ערכת אייקוני קו אחידה בכל המסכים במקום אימוג\'ים',
     'ניווט תחתון בסגנון בנקאי: כפתור הסריקה במרכז, עגול ומוגבה',
@@ -2600,6 +2603,12 @@ if (typeof module !== 'undefined' && module.exports) {
               if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdate(nw);
             });
           });
+          // Actively poll for a new deploy so the app never sits on a stale
+          // version: on open, hourly, and whenever it returns to the foreground.
+          const check = () => { reg.update().catch(() => {}); };
+          check();
+          setInterval(check, 60 * 60 * 1000);
+          document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
         }).catch(() => {});
       });
     }

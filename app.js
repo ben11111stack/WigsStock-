@@ -23,8 +23,11 @@ const KNOWN_STATUSES = [
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.7.1';
 const CHANGELOG = [
+  { v: '1.7.1', notes: [
+    'תיקון עדכונים "תקועים" — קבצי הליבה נמשכים תמיד טריים מהרשת, ובדיקת עדכון יזומה בכל פתיחה'
+  ] },
   { v: '1.7.0', notes: [
     'עיצוב מחדש יוקרתי — ערכת אייקוני קו אחידה בכל המסכים במקום אימוג\'ים',
     'ניווט תחתון בסגנון בנקאי: כפתור הסריקה במרכז, עגול ומוגבה',

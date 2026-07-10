@@ -1,5 +1,5 @@
 /* WigsStock service worker – offline shell, network-first so updates land */
-const CACHE = 'wigsstock-v12';
+const CACHE = 'wigsstock-v13';
 
 self.addEventListener('message', (e) => { if (e.data === 'SKIP_WAITING') self.skipWaiting(); });
 const ASSETS = [
@@ -28,17 +28,33 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
-  const sameOrigin = new URL(req.url).origin === self.location.origin;
+  const url = new URL(req.url);
+  const sameOrigin = url.origin === self.location.origin;
 
-  // Same-origin app files: network-first so a new deploy is always picked up;
-  // fall back to cache only when offline.
   if (sameOrigin) {
-    e.respondWith(
-      fetch(req).then((r) => {
-        if (r && r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
-        return r;
-      }).catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html')))
-    );
+    // Core app files (the HTML shell + code + styles) are ALWAYS fetched fresh
+    // with cache:'no-store', bypassing the browser's HTTP cache entirely — this
+    // is what stops the app getting "stuck" on an old version after a deploy.
+    // Cache is only a fallback for offline. Everything else same-origin (zxing,
+    // icons — big and rarely change) is cache-first.
+    const isCore = req.mode === 'navigate' ||
+      url.pathname.endsWith('/') ||
+      /\/(index\.html|app\.js|styles\.css)$/.test(url.pathname);
+    if (isCore) {
+      e.respondWith(
+        fetch(req, { cache: 'no-store' }).then((r) => {
+          if (r && r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
+          return r;
+        }).catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html')))
+      );
+    } else {
+      e.respondWith(
+        caches.match(req).then((hit) => hit || fetch(req).then((r) => {
+          if (r && r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
+          return r;
+        }))
+      );
+    }
     return;
   }
 

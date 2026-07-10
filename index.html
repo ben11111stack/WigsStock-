@@ -318,6 +318,12 @@
               if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdate(nw);
             });
           });
+          // Actively poll for a new deploy so the app never sits on a stale
+          // version: on open, hourly, and whenever it returns to the foreground.
+          const check = () => { reg.update().catch(() => {}); };
+          check();
+          setInterval(check, 60 * 60 * 1000);
+          document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
         }).catch(() => {});
       });
     }
