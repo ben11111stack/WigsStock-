@@ -467,17 +467,13 @@ td .ic { width: 15px; height: 15px; }
 .switch:checked { background: var(--primary); }
 .switch:checked::after { left: 22px; }
 
-/* ---------- Scan sound picker ---------- */
-.sound-picker { display: flex; flex-wrap: wrap; gap: 8px; }
-.sound-opt { padding: 8px 15px; border-radius: 999px; border: 1px solid var(--line);
-  background: var(--surface-2); color: var(--ink-2); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-.sound-opt:active { transform: scale(.96); }
-.sound-opt.active { background: var(--primary); color: #fff; border-color: var(--primary); }
-.seg-picker { display: flex; flex-wrap: wrap; gap: 8px; }
-.seg-opt { padding: 8px 15px; border-radius: 999px; border: 1px solid var(--line);
-  background: var(--surface); color: var(--ink-2); font-size: 13px; font-weight: 600; cursor: pointer; }
-.seg-opt:active { transform: scale(.96); }
-.seg-opt.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+/* ---------- Pill pickers (scan sound + default tab): 5 across, one row ---------- */
+.sound-picker, .seg-picker { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.sound-opt, .seg-opt { padding: 8px 6px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--ink-2); font-family: inherit; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sound-opt:active, .seg-opt:active { transform: scale(.96); }
+.sound-opt.active, .seg-opt.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
 /* ---------- Tappable barcode + wig product card ---------- */
 .bc-link { cursor: pointer; border-bottom: 1px dashed color-mix(in oklab, var(--primary) 45%, var(--line)); }

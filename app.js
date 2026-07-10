@@ -54,8 +54,12 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.12.0';
+const APP_VERSION = '1.12.1';
 const CHANGELOG = [
+  { v: '1.12.1', notes: [
+    'סדר בהגדרות: "מראה" (צבע/כהה/אנימציה) הופרד מ"התנהגות" (צליל/טאב פתיחה), והאקורדיונים סודרו לפי נושא',
+    'בוררי הצליל וטאב הפתיחה — חמישה בשורה אחת'
+  ] },
   { v: '1.12.0', notes: [
     'בחירת טאב פתיחה בהגדרות — איזה מסך ייפתח כשמפעילים את האפליקציה'
   ] },
