@@ -38,6 +38,13 @@
       </span>
     </div>
 
+    <div id="updateBar" class="install-bar update-bar hidden">
+      <span>🔄 גרסה חדשה זמינה</span>
+      <span class="install-actions">
+        <button id="updateBtn" class="btn small-btn">עדכן עכשיו</button>
+      </span>
+    </div>
+
     <!-- ==================== INVENTORY (מלאי) ==================== -->
     <section id="panel-load" class="tab">
       <div class="sec-head" style="padding-inline:18px">מצב המלאי</div>
@@ -89,17 +96,16 @@
         <div class="scan-tools">
           <span class="scan-mini"><b id="scanCount">0</b> נסרקו</span>
           <span class="scan-tools-btns">
-            <button id="manualToggle" class="icon-btn" title="הקלדה / סורק חיצוני">⌨︎</button>
+            <button id="flashBtn" class="icon-btn hidden" title="פלאש">🔦</button>
             <button id="cameraBtn" class="icon-btn" title="הפעל/עצור מצלמה">📷</button>
             <button id="resetScans" class="icon-btn danger" title="אפס סריקות">↺</button>
           </span>
         </div>
-        <div id="manualWrap" class="hidden">
-          <input id="scanInput" class="scan-input" inputmode="numeric" autocomplete="off" placeholder="הקלד/סרוק ברקוד">
-          <div class="spacer"></div>
-          <button class="btn secondary small-btn" id="manualAdd">רשום</button>
-          <div class="hint">סורק חיצוני (USB/בלוטות'): סרקי כאן — הברקוד נכנס לבד ו-Enter רושם.</div>
+        <div class="scan-input-row">
+          <input id="scanInput" class="scan-input" inputmode="numeric" autocomplete="off" placeholder="הקלד או סרוק ברקוד">
+          <button class="btn scan-add" id="manualAdd">רשום</button>
         </div>
+        <div class="hint">סורק חיצוני (USB/בלוטות'): הקישי על השדה וסרקי — הברקוד נכנס לבד ו-Enter רושם.</div>
       </div>
     </section>
 
@@ -181,6 +187,12 @@
         <button class="btn" id="writeBtn">כתוב עכשיו לשיטס</button>
         <p class="small" id="writeNote" style="margin:8px 0 0"></p>
       </div>
+
+      <div class="sec-head" style="padding-inline:18px">גרסאות ועדכונים</div>
+      <div class="card">
+        <p class="muted small">גרסה נוכחית: <b id="curVersion">—</b></p>
+        <div id="changelog" class="changelog"></div>
+      </div>
     </section>
 
   </main>
@@ -212,7 +224,31 @@
   <script src="app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return; refreshing = true; location.reload();
+      });
+      const showUpdate = (worker) => {
+        const bar = document.getElementById('updateBar');
+        if (!bar) return;
+        bar.classList.remove('hidden');
+        document.getElementById('updateBtn').onclick = () => {
+          document.getElementById('updateBtn').textContent = 'מעדכן…';
+          worker.postMessage('SKIP_WAITING');
+        };
+      };
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').then((reg) => {
+          if (reg.waiting && navigator.serviceWorker.controller) showUpdate(reg.waiting);
+          reg.addEventListener('updatefound', () => {
+            const nw = reg.installing;
+            if (!nw) return;
+            nw.addEventListener('statechange', () => {
+              if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdate(nw);
+            });
+          });
+        }).catch(() => {});
+      });
     }
   </script>
 </body>

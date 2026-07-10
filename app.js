@@ -23,6 +23,15 @@ const KNOWN_STATUSES = [
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
+const APP_VERSION = '1.4.0';
+const CHANGELOG = [
+  { v: '1.4.0', notes: ['לוגו ומיתוג WigsStock', 'כפתור פלאש (פנס) למצלמה', 'שדה הקלדה גלוי תמיד + כפתור "רשום" בשורה', 'התראת עדכון כשיש גרסה חדשה', 'רשימת גרסאות בהגדרות'] },
+  { v: '1.3.0', notes: ['טאב הגדרות מרוכז', 'שם עמדה חובה לפני סריקה', 'הדוח מציג מי סרק כל פאה', 'מחיקה/תיקון סריקה שגויה', 'סנכרון מהיר (~4ש\') בין עמדות'] },
+  { v: '1.2.0', notes: ['כתיבה אוטומטית לשיטס — נסרק/תאריך/עמדה', 'טעינת מלאי מקישור גוגל שיטס', 'סנכרון מלאי אוטומטי לכל העמדות'] },
+  { v: '1.1.0', notes: ['סנכרון ענן בין עמדות', 'דוח מפורט + פילוח לפי סטטוס', 'התקנה כאפליקציה (PWA)'] },
+  { v: '1.0.0', notes: ['ספירת מלאי עם סריקת ברקוד', 'התאמה מול גוגל שיטס', 'ייצוא CSV'] }
+];
+
 /* ---------- App state (persisted to localStorage) ---------- */
 const state = {
   session: '',       // this station's name (device)
@@ -321,6 +330,7 @@ async function startCamera() {
     scanCanvas = document.createElement('canvas');
     scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
     scanTick();   // our own decode loop — guarantees frames are actually decoded
+    updateFlashButton();
   } catch (e) {
     cameraOn = false;
     btn.textContent = '📷';
@@ -365,6 +375,27 @@ function stopCamera() {
   const v = $('#video'); if (v) { try { v.srcObject = null; } catch (e) {} }
   $('#cameraBtn').textContent = '📷';
   const s = $('#camStart'); if (s) s.classList.remove('hidden');
+  torchOn = false;
+  const fb = $('#flashBtn'); if (fb) { fb.classList.add('hidden'); fb.classList.remove('active'); }
+}
+
+// Camera flash / torch (Android Chrome; iOS Safari has no torch API).
+let torchOn = false;
+function torchTrack() { return cameraStream && cameraStream.getVideoTracks ? cameraStream.getVideoTracks()[0] : null; }
+function updateFlashButton() {
+  const btn = $('#flashBtn'); if (!btn) return;
+  const track = torchTrack();
+  const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+  if (cameraOn && caps && caps.torch) btn.classList.remove('hidden');
+  else { btn.classList.add('hidden'); torchOn = false; btn.classList.remove('active'); }
+}
+async function toggleTorch() {
+  const track = torchTrack(); if (!track) return;
+  try {
+    torchOn = !torchOn;
+    await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+    $('#flashBtn').classList.toggle('active', torchOn);
+  } catch (e) { torchOn = false; $('#flashBtn').classList.remove('active'); }
 }
 
 /* =====================================================================
@@ -856,8 +887,6 @@ function init() {
   $$('nav button').forEach(b => b.addEventListener('click', () => navigate(b.id.replace('tab-', ''))));
   window.addEventListener('popstate', (e) => {
     const st = e.state || { tab: 'scan' };
-    const w = $('#manualWrap');
-    if (w && !w.classList.contains('hidden') && !st.manual) w.classList.add('hidden');
     showTab(st.tab || 'scan');
   });
 
@@ -908,16 +937,7 @@ function init() {
   setupScanInput();
   $('#cameraBtn').addEventListener('click', startCamera);
   $('#camStart').addEventListener('click', startCamera);   // tap-to-start (required on iOS)
-  $('#manualToggle').addEventListener('click', () => {
-    const w = $('#manualWrap');
-    if (w.classList.contains('hidden')) {
-      w.classList.remove('hidden');
-      history.pushState({ tab: 'scan', manual: true }, '');   // back closes the keypad
-      setTimeout(() => $('#scanInput').focus(), 30);
-    } else {
-      w.classList.add('hidden');
-    }
-  });
+  $('#flashBtn').addEventListener('click', toggleTorch);
 
   // reset scans
   $('#resetScans').addEventListener('click', async () => {
@@ -950,6 +970,7 @@ function init() {
     reader.readAsText(file, 'UTF-8');
   });
 
+  renderVersions();
   renderInventoryStatus();
   renderScanStats();
   renderReport();
@@ -958,6 +979,14 @@ function init() {
   const start = 'scan';
   history.replaceState({ tab: start }, '');
   showTab(start);
+}
+
+function renderVersions() {
+  const cur = $('#curVersion'); if (cur) cur.textContent = APP_VERSION;
+  const el = $('#changelog'); if (!el) return;
+  el.innerHTML = CHANGELOG.map(c =>
+    `<div class="ver"><b>גרסה ${esc(c.v)}</b><ul>${c.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>`
+  ).join('');
 }
 
 function handleImport(text) {

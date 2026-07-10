@@ -234,13 +234,27 @@ details summary { cursor: pointer; }
 .icon-btn:active { transform: scale(.96); }
 .icon-btn.danger { color: var(--bad); border-color: color-mix(in oklab, var(--bad) 30%, var(--line)); }
 
-#manualWrap { margin-top: 12px; }
 .scan-input {
   width: 100%; padding: 13px; text-align: center;
   font-family: ui-monospace, monospace; font-size: 22px; font-weight: 600; letter-spacing: 3px;
   color: var(--ink);
   background: var(--surface-2); border: 1.5px solid var(--primary); border-radius: var(--r-lg);
 }
+.scan-input-row { display: flex; gap: 8px; margin-top: 12px; align-items: stretch; }
+.scan-input-row .scan-input { flex: 1; text-align: right; font-size: 19px; letter-spacing: 2px; }
+.scan-input-row .scan-input::placeholder { letter-spacing: 0; font-family: inherit; }
+.scan-add { width: auto; flex: none; padding: 0 22px; font-size: 15px; border-radius: var(--r-lg); }
+.icon-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.update-bar {
+  border-color: color-mix(in oklab, var(--ok) 40%, var(--line));
+  background: color-mix(in oklab, var(--ok) 11%, var(--bg));
+}
+.changelog .ver { margin-top: 12px; }
+.changelog .ver:first-child { margin-top: 4px; }
+.changelog .ver b { font-size: 13px; }
+.changelog .ver:first-child b { color: var(--primary); }
+.changelog .ver ul { margin: 4px 0 0; padding-inline-start: 18px; font-size: 12.5px; color: var(--ink-2); }
+.changelog .ver li { margin: 2px 0; }
 .scan-banner {
   margin: 10px 0 0; padding: 12px 14px; min-height: 58px;
   display: flex; flex-direction: column; justify-content: center; text-align: center;
@@ -345,6 +359,13 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
       </span>
     </div>
 
+    <div id="updateBar" class="install-bar update-bar hidden">
+      <span>🔄 גרסה חדשה זמינה</span>
+      <span class="install-actions">
+        <button id="updateBtn" class="btn small-btn">עדכן עכשיו</button>
+      </span>
+    </div>
+
     <!-- ==================== INVENTORY (מלאי) ==================== -->
     <section id="panel-load" class="tab">
       <div class="sec-head" style="padding-inline:18px">מצב המלאי</div>
@@ -396,17 +417,16 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
         <div class="scan-tools">
           <span class="scan-mini"><b id="scanCount">0</b> נסרקו</span>
           <span class="scan-tools-btns">
-            <button id="manualToggle" class="icon-btn" title="הקלדה / סורק חיצוני">⌨︎</button>
+            <button id="flashBtn" class="icon-btn hidden" title="פלאש">🔦</button>
             <button id="cameraBtn" class="icon-btn" title="הפעל/עצור מצלמה">📷</button>
             <button id="resetScans" class="icon-btn danger" title="אפס סריקות">↺</button>
           </span>
         </div>
-        <div id="manualWrap" class="hidden">
-          <input id="scanInput" class="scan-input" inputmode="numeric" autocomplete="off" placeholder="הקלד/סרוק ברקוד">
-          <div class="spacer"></div>
-          <button class="btn secondary small-btn" id="manualAdd">רשום</button>
-          <div class="hint">סורק חיצוני (USB/בלוטות'): סרקי כאן — הברקוד נכנס לבד ו-Enter רושם.</div>
+        <div class="scan-input-row">
+          <input id="scanInput" class="scan-input" inputmode="numeric" autocomplete="off" placeholder="הקלד או סרוק ברקוד">
+          <button class="btn scan-add" id="manualAdd">רשום</button>
         </div>
+        <div class="hint">סורק חיצוני (USB/בלוטות'): הקישי על השדה וסרקי — הברקוד נכנס לבד ו-Enter רושם.</div>
       </div>
     </section>
 
@@ -488,6 +508,12 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
         <button class="btn" id="writeBtn">כתוב עכשיו לשיטס</button>
         <p class="small" id="writeNote" style="margin:8px 0 0"></p>
       </div>
+
+      <div class="sec-head" style="padding-inline:18px">גרסאות ועדכונים</div>
+      <div class="card">
+        <p class="muted small">גרסה נוכחית: <b id="curVersion">—</b></p>
+        <div id="changelog" class="changelog"></div>
+      </div>
     </section>
 
   </main>
@@ -543,6 +569,15 @@ const KNOWN_STATUSES = [
 // Deployed cloud backend — used by default so the app syncs out of the box.
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
+
+const APP_VERSION = '1.4.0';
+const CHANGELOG = [
+  { v: '1.4.0', notes: ['לוגו ומיתוג WigsStock', 'כפתור פלאש (פנס) למצלמה', 'שדה הקלדה גלוי תמיד + כפתור "רשום" בשורה', 'התראת עדכון כשיש גרסה חדשה', 'רשימת גרסאות בהגדרות'] },
+  { v: '1.3.0', notes: ['טאב הגדרות מרוכז', 'שם עמדה חובה לפני סריקה', 'הדוח מציג מי סרק כל פאה', 'מחיקה/תיקון סריקה שגויה', 'סנכרון מהיר (~4ש\') בין עמדות'] },
+  { v: '1.2.0', notes: ['כתיבה אוטומטית לשיטס — נסרק/תאריך/עמדה', 'טעינת מלאי מקישור גוגל שיטס', 'סנכרון מלאי אוטומטי לכל העמדות'] },
+  { v: '1.1.0', notes: ['סנכרון ענן בין עמדות', 'דוח מפורט + פילוח לפי סטטוס', 'התקנה כאפליקציה (PWA)'] },
+  { v: '1.0.0', notes: ['ספירת מלאי עם סריקת ברקוד', 'התאמה מול גוגל שיטס', 'ייצוא CSV'] }
+];
 
 /* ---------- App state (persisted to localStorage) ---------- */
 const state = {
@@ -842,6 +877,7 @@ async function startCamera() {
     scanCanvas = document.createElement('canvas');
     scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
     scanTick();   // our own decode loop — guarantees frames are actually decoded
+    updateFlashButton();
   } catch (e) {
     cameraOn = false;
     btn.textContent = '📷';
@@ -886,6 +922,27 @@ function stopCamera() {
   const v = $('#video'); if (v) { try { v.srcObject = null; } catch (e) {} }
   $('#cameraBtn').textContent = '📷';
   const s = $('#camStart'); if (s) s.classList.remove('hidden');
+  torchOn = false;
+  const fb = $('#flashBtn'); if (fb) { fb.classList.add('hidden'); fb.classList.remove('active'); }
+}
+
+// Camera flash / torch (Android Chrome; iOS Safari has no torch API).
+let torchOn = false;
+function torchTrack() { return cameraStream && cameraStream.getVideoTracks ? cameraStream.getVideoTracks()[0] : null; }
+function updateFlashButton() {
+  const btn = $('#flashBtn'); if (!btn) return;
+  const track = torchTrack();
+  const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+  if (cameraOn && caps && caps.torch) btn.classList.remove('hidden');
+  else { btn.classList.add('hidden'); torchOn = false; btn.classList.remove('active'); }
+}
+async function toggleTorch() {
+  const track = torchTrack(); if (!track) return;
+  try {
+    torchOn = !torchOn;
+    await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+    $('#flashBtn').classList.toggle('active', torchOn);
+  } catch (e) { torchOn = false; $('#flashBtn').classList.remove('active'); }
 }
 
 /* =====================================================================
@@ -1377,8 +1434,6 @@ function init() {
   $('nav button').forEach(b => b.addEventListener('click', () => navigate(b.id.replace('tab-', ''))));
   window.addEventListener('popstate', (e) => {
     const st = e.state || { tab: 'scan' };
-    const w = $('#manualWrap');
-    if (w && !w.classList.contains('hidden') && !st.manual) w.classList.add('hidden');
     showTab(st.tab || 'scan');
   });
 
@@ -1429,16 +1484,7 @@ function init() {
   setupScanInput();
   $('#cameraBtn').addEventListener('click', startCamera);
   $('#camStart').addEventListener('click', startCamera);   // tap-to-start (required on iOS)
-  $('#manualToggle').addEventListener('click', () => {
-    const w = $('#manualWrap');
-    if (w.classList.contains('hidden')) {
-      w.classList.remove('hidden');
-      history.pushState({ tab: 'scan', manual: true }, '');   // back closes the keypad
-      setTimeout(() => $('#scanInput').focus(), 30);
-    } else {
-      w.classList.add('hidden');
-    }
-  });
+  $('#flashBtn').addEventListener('click', toggleTorch);
 
   // reset scans
   $('#resetScans').addEventListener('click', async () => {
@@ -1471,6 +1517,7 @@ function init() {
     reader.readAsText(file, 'UTF-8');
   });
 
+  renderVersions();
   renderInventoryStatus();
   renderScanStats();
   renderReport();
@@ -1479,6 +1526,14 @@ function init() {
   const start = 'scan';
   history.replaceState({ tab: start }, '');
   showTab(start);
+}
+
+function renderVersions() {
+  const cur = $('#curVersion'); if (cur) cur.textContent = APP_VERSION;
+  const el = $('#changelog'); if (!el) return;
+  el.innerHTML = CHANGELOG.map(c =>
+    `<div class="ver"><b>גרסה ${esc(c.v)}</b><ul>${c.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>`
+  ).join('');
 }
 
 function handleImport(text) {
@@ -1564,7 +1619,31 @@ document.addEventListener('DOMContentLoaded', init);
 </script>
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return; refreshing = true; location.reload();
+      });
+      const showUpdate = (worker) => {
+        const bar = document.getElementById('updateBar');
+        if (!bar) return;
+        bar.classList.remove('hidden');
+        document.getElementById('updateBtn').onclick = () => {
+          document.getElementById('updateBtn').textContent = 'מעדכן…';
+          worker.postMessage('SKIP_WAITING');
+        };
+      };
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').then((reg) => {
+          if (reg.waiting && navigator.serviceWorker.controller) showUpdate(reg.waiting);
+          reg.addEventListener('updatefound', () => {
+            const nw = reg.installing;
+            if (!nw) return;
+            nw.addEventListener('statechange', () => {
+              if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdate(nw);
+            });
+          });
+        }).catch(() => {});
+      });
     }
   </script>
 </body>
