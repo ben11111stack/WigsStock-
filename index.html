@@ -47,23 +47,35 @@
 
     <!-- ==================== INVENTORY (מלאי) ==================== -->
     <section id="panel-load" class="tab">
-      <div class="card" style="margin-bottom:0">
-        <div class="hint" style="margin:0">📄 <b>לשונית "מלאי"</b> — כאן <b>טוענים</b> את קובץ הפאות (מגוגל שיטס או CSV). זו רשימת האמת של מה שאמור להיות. לתוצאות הספירה מול הרשימה — עברי ל<b>לשונית "דוח"</b>.</div>
-      </div>
-      <div class="sec-head" style="padding-inline:18px">מצב המלאי</div>
-      <div class="card">
-        <div id="invStatus"></div>
-        <div class="spacer"></div>
-        <div class="row">
-          <button class="btn ghost small-btn" id="loadSample">טען דוגמה (2000)</button>
-          <button class="btn danger small-btn" id="clearInv">מחק מלאי</button>
+      <div class="sec-head" style="padding-inline:18px">מלאי הפאות</div>
+
+      <div class="card intro-card">
+        <div class="intro-title">📄 רשימת האמת של החנות</div>
+        <p class="muted small">כאן <b>טוענים</b> את קובץ כל הפאות — כל פאה והסטטוס שלה. מול הרשימה הזו האפליקציה משווה את מה שנסרק פיזית. את <b>תוצאות ההשוואה</b> רואים בלשונית <b>"דוח"</b>.</p>
+        <div class="intro-flow">
+          <span class="intro-step">📄 מלאי<small>מה שאמור להיות</small></span>
+          <span class="intro-arrow">→</span>
+          <span class="intro-step">📷 סריקה<small>מה שיש בפועל</small></span>
+          <span class="intro-arrow">→</span>
+          <span class="intro-step">📊 דוח<small>ההפרש</small></span>
         </div>
-        <div class="hint">המלאי נטען בדרך כלל מקישור גוגל שיטס (הגדרות → גוגל שיטס). כאן אפשר גם טעינה ידנית.</div>
       </div>
 
-      <div class="sec-head" style="padding-inline:18px">טעינה ידנית מקובץ</div>
       <div class="card">
-        <label class="file-label" for="invFile">בחרי קובץ CSV · או גררי לכאן</label>
+        <div id="invStatus"></div>
+      </div>
+
+      <div class="sec-head" style="padding-inline:18px">איך טוענים מלאי</div>
+      <div class="card">
+        <button class="load-opt" id="goSheetSettings" type="button">
+          <span class="load-opt-ico">☁️</span>
+          <span class="load-opt-txt"><b>מגוגל שיטס</b><small class="muted">נטען ומתרענן אוטומטית בכל העמדות · מומלץ</small></span>
+          <span class="load-opt-go">›</span>
+        </button>
+
+        <div class="or-divider"><span>או טעינה ידנית</span></div>
+
+        <label class="file-label" for="invFile">📁 בחרי קובץ CSV · או גררי לכאן</label>
         <input type="file" id="invFile" accept=".csv,text/csv">
         <details>
           <summary class="muted small">או הדביקי את הנתונים ידנית</summary>
@@ -74,6 +86,10 @@
         </details>
         <p class="small" id="importNote" style="color:var(--ok);margin:10px 0 0"></p>
         <div class="hint">צריך עמודת ברקוד ועמודת סטטוס. סטטוסים: barter · consignment · fix-return · <b>in-stock</b> · inventory-reserved · missing · other · personal-use · returned · sold · wish-list</div>
+      </div>
+
+      <div class="card">
+        <button class="btn danger" id="clearInv">🗑 מחק את המלאי הטעון</button>
       </div>
     </section>
 

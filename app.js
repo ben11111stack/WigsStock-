@@ -1410,12 +1410,18 @@ function init() {
     const t = $('#invPaste').value.trim();
     if (t) handleImport(t);
   });
-  $('#loadSample').addEventListener('click', async () => {
-    try {
-      const r = await fetch('sample-inventory.csv', { cache: 'no-store' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      handleImport(await r.text());
-    } catch (e) { alert('לא הצלחתי לטעון דוגמה: ' + e.message); }
+  // "load from Google Sheets" shortcut → open Settings and expand the sheet section
+  const goSheet = $('#goSheetSettings');
+  if (goSheet) goSheet.addEventListener('click', () => {
+    navigate('settings');
+    setTimeout(() => {
+      const heads = $$('#panel-settings .acc-head');
+      const sheetAcc = heads.find(h => /גוגל שיטס/.test(h.textContent));
+      if (sheetAcc && sheetAcc.parentElement) {
+        sheetAcc.parentElement.classList.add('open');
+        sheetAcc.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 60);
   });
 
   // load inventory from a shared Google Sheets link (via the Worker proxy)

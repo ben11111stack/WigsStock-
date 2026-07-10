@@ -384,3 +384,25 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
 /* per-station mini bar */
 .mini-bar { display: inline-block; width: 90px; height: 8px; border-radius: 5px; background: var(--surface-2); overflow: hidden; vertical-align: middle; margin-inline-end: 6px; }
 .mini-bar > div { height: 100%; background: var(--primary); border-radius: 5px; }
+
+/* inventory tab: intro + load options */
+.intro-card { background: var(--primary-weak); border-color: color-mix(in oklab, var(--primary) 22%, var(--line)); }
+.intro-title { font-size: 15px; font-weight: 620; color: var(--ink); margin-bottom: 6px; }
+.intro-flow { display: flex; align-items: stretch; gap: 6px; margin-top: 14px; }
+.intro-step { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 3px;
+  padding: 10px 6px; border-radius: var(--r-sm); background: var(--bg); border: 1px solid var(--line);
+  font-size: 13px; font-weight: 600; color: var(--ink); }
+.intro-step small { font-size: 10.5px; font-weight: 500; color: var(--ink-3); }
+.intro-arrow { display: flex; align-items: center; color: var(--ink-3); font-size: 16px; }
+
+.load-opt { display: flex; align-items: center; gap: 12px; width: 100%; text-align: start; cursor: pointer;
+  padding: 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); font-family: inherit; }
+.load-opt:active { transform: scale(.99); }
+.load-opt-ico { font-size: 24px; }
+.load-opt-txt { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.load-opt-txt b { font-size: 14.5px; color: var(--ink); }
+.load-opt-txt small { font-size: 12px; }
+.load-opt-go { font-size: 22px; color: var(--ink-3); }
+
+.or-divider { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: var(--ink-3); font-size: 12px; }
+.or-divider::before, .or-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }

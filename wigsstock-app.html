@@ -403,6 +403,28 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
 .mini-bar { display: inline-block; width: 90px; height: 8px; border-radius: 5px; background: var(--surface-2); overflow: hidden; vertical-align: middle; margin-inline-end: 6px; }
 .mini-bar > div { height: 100%; background: var(--primary); border-radius: 5px; }
 
+/* inventory tab: intro + load options */
+.intro-card { background: var(--primary-weak); border-color: color-mix(in oklab, var(--primary) 22%, var(--line)); }
+.intro-title { font-size: 15px; font-weight: 620; color: var(--ink); margin-bottom: 6px; }
+.intro-flow { display: flex; align-items: stretch; gap: 6px; margin-top: 14px; }
+.intro-step { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 3px;
+  padding: 10px 6px; border-radius: var(--r-sm); background: var(--bg); border: 1px solid var(--line);
+  font-size: 13px; font-weight: 600; color: var(--ink); }
+.intro-step small { font-size: 10.5px; font-weight: 500; color: var(--ink-3); }
+.intro-arrow { display: flex; align-items: center; color: var(--ink-3); font-size: 16px; }
+
+.load-opt { display: flex; align-items: center; gap: 12px; width: 100%; text-align: start; cursor: pointer;
+  padding: 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); font-family: inherit; }
+.load-opt:active { transform: scale(.99); }
+.load-opt-ico { font-size: 24px; }
+.load-opt-txt { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.load-opt-txt b { font-size: 14.5px; color: var(--ink); }
+.load-opt-txt small { font-size: 12px; }
+.load-opt-go { font-size: 22px; color: var(--ink-3); }
+
+.or-divider { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: var(--ink-3); font-size: 12px; }
+.or-divider::before, .or-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
 </style>
 </head>
 <body>
@@ -435,23 +457,35 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
 
     <!-- ==================== INVENTORY (מלאי) ==================== -->
     <section id="panel-load" class="tab">
-      <div class="card" style="margin-bottom:0">
-        <div class="hint" style="margin:0">📄 <b>לשונית "מלאי"</b> — כאן <b>טוענים</b> את קובץ הפאות (מגוגל שיטס או CSV). זו רשימת האמת של מה שאמור להיות. לתוצאות הספירה מול הרשימה — עברי ל<b>לשונית "דוח"</b>.</div>
-      </div>
-      <div class="sec-head" style="padding-inline:18px">מצב המלאי</div>
-      <div class="card">
-        <div id="invStatus"></div>
-        <div class="spacer"></div>
-        <div class="row">
-          <button class="btn ghost small-btn" id="loadSample">טען דוגמה (2000)</button>
-          <button class="btn danger small-btn" id="clearInv">מחק מלאי</button>
+      <div class="sec-head" style="padding-inline:18px">מלאי הפאות</div>
+
+      <div class="card intro-card">
+        <div class="intro-title">📄 רשימת האמת של החנות</div>
+        <p class="muted small">כאן <b>טוענים</b> את קובץ כל הפאות — כל פאה והסטטוס שלה. מול הרשימה הזו האפליקציה משווה את מה שנסרק פיזית. את <b>תוצאות ההשוואה</b> רואים בלשונית <b>"דוח"</b>.</p>
+        <div class="intro-flow">
+          <span class="intro-step">📄 מלאי<small>מה שאמור להיות</small></span>
+          <span class="intro-arrow">→</span>
+          <span class="intro-step">📷 סריקה<small>מה שיש בפועל</small></span>
+          <span class="intro-arrow">→</span>
+          <span class="intro-step">📊 דוח<small>ההפרש</small></span>
         </div>
-        <div class="hint">המלאי נטען בדרך כלל מקישור גוגל שיטס (הגדרות → גוגל שיטס). כאן אפשר גם טעינה ידנית.</div>
       </div>
 
-      <div class="sec-head" style="padding-inline:18px">טעינה ידנית מקובץ</div>
       <div class="card">
-        <label class="file-label" for="invFile">בחרי קובץ CSV · או גררי לכאן</label>
+        <div id="invStatus"></div>
+      </div>
+
+      <div class="sec-head" style="padding-inline:18px">איך טוענים מלאי</div>
+      <div class="card">
+        <button class="load-opt" id="goSheetSettings" type="button">
+          <span class="load-opt-ico">☁️</span>
+          <span class="load-opt-txt"><b>מגוגל שיטס</b><small class="muted">נטען ומתרענן אוטומטית בכל העמדות · מומלץ</small></span>
+          <span class="load-opt-go">›</span>
+        </button>
+
+        <div class="or-divider"><span>או טעינה ידנית</span></div>
+
+        <label class="file-label" for="invFile">📁 בחרי קובץ CSV · או גררי לכאן</label>
         <input type="file" id="invFile" accept=".csv,text/csv">
         <details>
           <summary class="muted small">או הדביקי את הנתונים ידנית</summary>
@@ -462,6 +496,10 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
         </details>
         <p class="small" id="importNote" style="color:var(--ok);margin:10px 0 0"></p>
         <div class="hint">צריך עמודת ברקוד ועמודת סטטוס. סטטוסים: barter · consignment · fix-return · <b>in-stock</b> · inventory-reserved · missing · other · personal-use · returned · sold · wish-list</div>
+      </div>
+
+      <div class="card">
+        <button class="btn danger" id="clearInv">🗑 מחק את המלאי הטעון</button>
       </div>
     </section>
 
@@ -2074,12 +2112,18 @@ function init() {
     const t = $('#invPaste').value.trim();
     if (t) handleImport(t);
   });
-  $('#loadSample').addEventListener('click', async () => {
-    try {
-      const r = await fetch('sample-inventory.csv', { cache: 'no-store' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      handleImport(await r.text());
-    } catch (e) { alert('לא הצלחתי לטעון דוגמה: ' + e.message); }
+  // "load from Google Sheets" shortcut → open Settings and expand the sheet section
+  const goSheet = $('#goSheetSettings');
+  if (goSheet) goSheet.addEventListener('click', () => {
+    navigate('settings');
+    setTimeout(() => {
+      const heads = $('#panel-settings .acc-head');
+      const sheetAcc = heads.find(h => /גוגל שיטס/.test(h.textContent));
+      if (sheetAcc && sheetAcc.parentElement) {
+        sheetAcc.parentElement.classList.add('open');
+        sheetAcc.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 60);
   });
 
   // load inventory from a shared Google Sheets link (via the Worker proxy)
