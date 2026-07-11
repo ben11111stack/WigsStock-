@@ -1120,8 +1120,12 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.13.0';
+const APP_VERSION = '1.13.1';
 const CHANGELOG = [
+  { v: '1.13.1', notes: [
+    'כתובת ה-Apps Script (כתיבה לשיטס) נטענת עכשיו מהשרת — לא "נעלמת" יותר אם נוקה האחסון או פתחת בדפדפן אחר',
+    'המצלמה משתחררת גם במחשב כשעוברים לחלון/אפליקציה אחרת (לא רק בטלפון), וחוזרת כשחוזרים ללשונית הסריקה'
+  ] },
   { v: '1.13.0', notes: [
     'ההגדרות מסתנכרנות בין כל העמדות דרך השרת — צבע, מצב כהה, צליל, אנימציה, טאב פתיחה, שמות פאות, שינויי סטטוס ומודל הסטטוסים. שינוי בעמדה אחת מופיע בכולן.',
     'רק שם העמדה (וכתובת/מפתח השרת ושם הספירה) נשארים מקומיים למכשיר.',
@@ -2755,6 +2759,13 @@ async function pullCloud() {
       save();
       loadFromSheet(false);
     }
+    // adopt the write-back target too, so a device that lost it (cleared storage,
+    // new browser) gets it back from the server instead of silently not writing.
+    if (data.script_url && data.script_url !== state.writeUrl) {
+      state.writeUrl = data.script_url;
+      const el = $('#writeUrl'); if (el) el.value = state.writeUrl;
+      save();
+    }
   } catch (e) { /* keep last known cloud data */ }
 }
 
@@ -3012,6 +3023,20 @@ function init() {
     }
   });
   window.addEventListener('pagehide', () => { if (cameraOn) stopCamera(); closeLookupScan(); });
+  // Desktop: switching to another window or app fires window 'blur' but usually
+  // NOT 'visibilitychange' (the tab is still "visible"), so the camera would stay
+  // busy. Release it on blur too, and resume on focus if we're back on the scan
+  // tab — mirroring the mobile background behaviour.
+  window.addEventListener('blur', () => {
+    if (cameraOn) { cameraResumeOnVisible = true; stopCamera(); }
+    closeLookupScan();
+  });
+  window.addEventListener('focus', () => {
+    if (cameraResumeOnVisible && !document.hidden) {
+      cameraResumeOnVisible = false;
+      if (document.querySelector('#panel-scan.active')) ensureCamera();
+    }
+  });
 
   // tabs (each switch pushes history so the back button walks tabs, not out of the app)
   $('nav button').forEach(b => b.addEventListener('click', () => navigate(b.id.replace('tab-', ''))));

@@ -265,17 +265,17 @@ export default {
           .prepare(`SELECT COUNT(DISTINCT device) AS n FROM scans WHERE count_id = ?1`)
           .bind(countId).first();
 
-        let sheetUrl = '', resetAt = 0, settings = null, settingsAt = 0;
+        let sheetUrl = '', scriptUrl = '', resetAt = 0, settings = null, settingsAt = 0;
         try {
-          const m = await env.DB.prepare(`SELECT sheet_url, reset_at, settings, settings_at FROM meta WHERE count_id = ?1`).bind(countId).first();
+          const m = await env.DB.prepare(`SELECT sheet_url, script_url, reset_at, settings, settings_at FROM meta WHERE count_id = ?1`).bind(countId).first();
           if (m) {
-            sheetUrl = m.sheet_url || ''; resetAt = m.reset_at || 0;
+            sheetUrl = m.sheet_url || ''; scriptUrl = m.script_url || ''; resetAt = m.reset_at || 0;
             settingsAt = m.settings_at || 0;
             if (m.settings) { try { settings = JSON.parse(m.settings); } catch (e) { settings = null; } }
           }
         } catch (e) { /* meta table may not exist yet */ }
 
-        return json({ ok: true, scans, detail, barcodes: Object.keys(scans).length, devices: dev ? dev.n : 0, sheet_url: sheetUrl, reset_at: resetAt, settings, settings_at: settingsAt });
+        return json({ ok: true, scans, detail, barcodes: Object.keys(scans).length, devices: dev ? dev.n : 0, sheet_url: sheetUrl, script_url: scriptUrl, reset_at: resetAt, settings, settings_at: settingsAt });
       }
 
       return json({ error: 'not found', path }, 404);
