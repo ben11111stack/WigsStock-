@@ -1120,8 +1120,13 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.12.1';
+const APP_VERSION = '1.13.0';
 const CHANGELOG = [
+  { v: '1.13.0', notes: [
+    'ההגדרות מסתנכרנות בין כל העמדות דרך השרת — צבע, מצב כהה, צליל, אנימציה, טאב פתיחה, שמות פאות, שינויי סטטוס ומודל הסטטוסים. שינוי בעמדה אחת מופיע בכולן.',
+    'רק שם העמדה (וכתובת/מפתח השרת ושם הספירה) נשארים מקומיים למכשיר.',
+    'תיקון: כתיבה חזרה לשיטס (עמודות נסרק/תאריך/עמדה/שם) נכשלה בשקט על שרת/מסד נתונים חדש — ה-Worker יוצר עכשיו את הטבלאות לבד'
+  ] },
   { v: '1.12.1', notes: [
     'סדר בהגדרות: "מראה" (צבע/כהה/אנימציה) הופרד מ"התנהגות" (צליל/טאב פתיחה), והאקורדיונים סודרו לפי נושא',
     'בוררי הצליל וטאב הפתיחה — חמישה בשורה אחת'
@@ -1223,7 +1228,8 @@ const state = {
   statusOverrides: {}, // barcode -> status changed from the wig card (survives sheet reload)
   statusVocab: null, // user-edited status vocabulary ([{key,label,inStore}]); null = defaults
   logoAnim: true,    // constant motion of the small header logo (splash always plays regardless)
-  defaultTab: 'scan' // which tab opens on app launch
+  defaultTab: 'scan',// which tab opens on app launch
+  lastSettingsAt: 0  // newest shared-settings timestamp this device has applied (local bookkeeping)
 };
 
 // The five tabs, in nav order — used for the "default tab" picker in Settings.
@@ -1294,12 +1300,16 @@ const LS_KEY = 'wigsstock_v1';
 
 function save() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
+  scheduleSettingsPush();   // no-op unless a synced setting actually changed
 }
 function load() {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) Object.assign(state, JSON.parse(raw));
   } catch (e) {}
+  // Baseline the settings signature so early/benign save()s don't push local
+  // settings over the server's — only genuine user changes push after this.
+  seedSettingsSig();
 }
 
 /* ---------- Small DOM helpers ---------- */
@@ -2629,6 +2639,60 @@ function cloudHeaders() {
 }
 function deviceId() { return (state.session && state.session.trim()) || state.deviceId; }
 
+/* ---------- Shared settings sync ----------
+ * Rule: only the per-device station name (state.session) and the connection/
+ * identity fields (cloudUrl / apiKey / countId) stay on the device. Everything
+ * else — look (accent/dark/sound/logo), landing tab, and per-wig data
+ * (names / status overrides / status vocabulary) — lives on the server keyed by
+ * count_id, so every station shares one look and one data set. Last-write-wins
+ * by timestamp. */
+const SERVER_SETTINGS_KEYS = [
+  'accent', 'dark', 'sound', 'logoAnim', 'defaultTab', 'batchMode',
+  'names', 'statusOverrides', 'statusVocab'
+];
+function collectSettings() {
+  const o = {};
+  for (const k of SERVER_SETTINGS_KEYS) o[k] = state[k];
+  return o;
+}
+let _settingsSig = '', _settingsTimer = null;
+// Adopt the current settings as the baseline (so we don't echo them back).
+function seedSettingsSig() { _settingsSig = JSON.stringify(collectSettings()); }
+// Push to the cloud only when a *settings* field actually changed — save() runs
+// on every scan too, and those must not trigger a settings write.
+function scheduleSettingsPush() {
+  if (!cloudEnabled()) return;
+  const sig = JSON.stringify(collectSettings());
+  if (sig === _settingsSig) return;
+  _settingsSig = sig;
+  clearTimeout(_settingsTimer);
+  _settingsTimer = setTimeout(pushSettings, 900);
+}
+async function pushSettings() {
+  if (!cloudEnabled()) return;
+  try {
+    const res = await fetch(cloudBase() + '/api/config', {
+      method: 'POST', headers: cloudHeaders(),
+      body: JSON.stringify({ count_id: state.countId, settings: collectSettings() })
+    });
+    const j = await res.json().catch(() => ({}));
+    if (j && j.settings_at) { state.lastSettingsAt = j.settings_at; save(); }  // our own write — don't re-pull it
+  } catch (e) { /* a later change (or config apply) retries */ }
+}
+// Apply settings pulled from the cloud, last-write-wins, then refresh the UI.
+function applyRemoteSettings(settings, at) {
+  if (!settings || typeof settings !== 'object') return;
+  at = at || 0;
+  if (at <= (state.lastSettingsAt || 0)) return;   // not newer than what we already have
+  for (const k of SERVER_SETTINGS_KEYS) if (k in settings) state[k] = settings[k];
+  state.lastSettingsAt = at;
+  seedSettingsSig();                               // adopt as baseline (no echo back)
+  save();
+  applyTheme(); applyLogoAnim();
+  renderTheme(); renderStatusManager();
+  reconcile(); renderReport(true); renderScanStats();
+}
+
 let syncTimer = null, retryTimer = null, syncing = false, pollTimer = null;
 
 function schedulePush() {
@@ -2682,6 +2746,8 @@ async function pullCloud() {
     save();
     renderReport(); renderScanStats();
     setCloudStatus('ok', data);
+    // adopt shared settings (look + per-wig data) set on any station
+    applyRemoteSettings(data.settings, data.settings_at || 0);
     // adopt the shared inventory source set by the manager (loads it on every station)
     if (data.sheet_url && data.sheet_url !== state.sheetUrl) {
       state.sheetUrl = data.sheet_url;
@@ -2748,6 +2814,9 @@ function applyCloudConfig() {
     markAllDirty();
     setCloudStatus('syncing');
     pushCloud();
+    // First pull adopts the server's shared settings if they're newer; if this
+    // station has never synced settings, seed the server from its current ones.
+    pullCloud().then(() => { if (!state.lastSettingsAt) pushSettings(); });
     startPolling();
   } else {
     clearInterval(pollTimer);

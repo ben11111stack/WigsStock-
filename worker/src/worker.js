@@ -50,6 +50,30 @@ function normalizeSheetUrl(src) {
   return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
 }
 
+// Self-healing schema: create the tables if they're missing, so a freshly
+// created D1 (e.g. after moving to a new Cloudflare account) works without a
+// manual `wrangler d1 execute schema.sql` step. Runs once per isolate.
+let schemaReady = false;
+async function ensureSchema(env) {
+  if (schemaReady) return;
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS scans (
+       count_id TEXT NOT NULL, device TEXT NOT NULL, barcode TEXT NOT NULL,
+       count INTEGER NOT NULL DEFAULT 1, updated_at INTEGER,
+       PRIMARY KEY (count_id, device, barcode))`
+  ).run();
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS meta (
+       count_id TEXT PRIMARY KEY, sheet_url TEXT, script_url TEXT,
+       reset_at INTEGER, last_written INTEGER,
+       settings TEXT, settings_at INTEGER, updated_at INTEGER)`
+  ).run();
+  // Defensive: add the settings columns to a meta table that predates them.
+  try { await env.DB.prepare(`ALTER TABLE meta ADD COLUMN settings TEXT`).run(); } catch (e) { /* exists */ }
+  try { await env.DB.prepare(`ALTER TABLE meta ADD COLUMN settings_at INTEGER`).run(); } catch (e) { /* exists */ }
+  schemaReady = true;
+}
+
 // Aggregate a count's scans per barcode: total, last time, and stations.
 async function aggregateScans(env, countId) {
   const { results } = await env.DB.prepare(
@@ -104,6 +128,9 @@ export default {
 
       // Gate mutating endpoints behind the optional shared secret.
       if (req.method === 'POST' && !authed(req, env)) return json({ error: 'unauthorized' }, 401);
+
+      // Make sure the tables exist (self-heals a fresh D1 with no schema run).
+      await ensureSchema(env);
 
       if (path === '/api/sync' && req.method === 'POST') {
         const body = await req.json();
@@ -194,6 +221,14 @@ export default {
           await env.DB.prepare(`UPDATE meta SET sheet_url = ?2, updated_at = ?3 WHERE count_id = ?1`).bind(countId, String(body.sheet_url || '').trim(), now).run();
         if (body.script_url !== undefined)
           await env.DB.prepare(`UPDATE meta SET script_url = ?2, updated_at = ?3 WHERE count_id = ?1`).bind(countId, String(body.script_url || '').trim(), now).run();
+        // Shared app settings (accent, dark, sound, names, statusOverrides, …) —
+        // everything except the per-device station name and connection details.
+        // Stored as one JSON blob with a timestamp; stations apply it last-write-wins.
+        if (body.settings !== undefined && body.settings && typeof body.settings === 'object') {
+          const blob = JSON.stringify(body.settings).slice(0, 200000);
+          await env.DB.prepare(`UPDATE meta SET settings = ?2, settings_at = ?3, updated_at = ?3 WHERE count_id = ?1`).bind(countId, blob, now).run();
+          return json({ ok: true, settings_at: now });
+        }
         return json({ ok: true });
       }
 
@@ -230,13 +265,17 @@ export default {
           .prepare(`SELECT COUNT(DISTINCT device) AS n FROM scans WHERE count_id = ?1`)
           .bind(countId).first();
 
-        let sheetUrl = '', resetAt = 0;
+        let sheetUrl = '', resetAt = 0, settings = null, settingsAt = 0;
         try {
-          const m = await env.DB.prepare(`SELECT sheet_url, reset_at FROM meta WHERE count_id = ?1`).bind(countId).first();
-          if (m) { sheetUrl = m.sheet_url || ''; resetAt = m.reset_at || 0; }
+          const m = await env.DB.prepare(`SELECT sheet_url, reset_at, settings, settings_at FROM meta WHERE count_id = ?1`).bind(countId).first();
+          if (m) {
+            sheetUrl = m.sheet_url || ''; resetAt = m.reset_at || 0;
+            settingsAt = m.settings_at || 0;
+            if (m.settings) { try { settings = JSON.parse(m.settings); } catch (e) { settings = null; } }
+          }
         } catch (e) { /* meta table may not exist yet */ }
 
-        return json({ ok: true, scans, detail, barcodes: Object.keys(scans).length, devices: dev ? dev.n : 0, sheet_url: sheetUrl, reset_at: resetAt });
+        return json({ ok: true, scans, detail, barcodes: Object.keys(scans).length, devices: dev ? dev.n : 0, sheet_url: sheetUrl, reset_at: resetAt, settings, settings_at: settingsAt });
       }
 
       return json({ error: 'not found', path }, 404);
@@ -249,6 +288,7 @@ export default {
   // and new scans since the last write.
   async scheduled(event, env, ctx) {
     try {
+      await ensureSchema(env);
       const { results } = await env.DB
         .prepare(`SELECT count_id, script_url, last_written FROM meta WHERE script_url IS NOT NULL AND script_url != ''`)
         .all();
