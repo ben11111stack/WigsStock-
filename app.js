@@ -54,8 +54,12 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.13.2';
+const APP_VERSION = '1.13.3';
 const CHANGELOG = [
+  { v: '1.13.3', notes: [
+    'אפשר ללחוץ על מונה "ממתינות" כדי לאלץ סנכרון מיידי — והוא מראה בדיוק למה זה נתקע (אין חיבור / כתובת שגויה / רשת איטית)',
+    'מנגנון "שומר" שמשחרר סנכרון תקוע אוטומטית אחרי 15 שניות'
+  ] },
   { v: '1.13.2', notes: [
     'תיקון: מונה "ממתינות לסנכרון" יכל להיתקע אם בקשת רשת "נתקעה" (רשת סלולרית חלשה) — נוסף timeout שמבטיח שהסנכרון תמיד מתאושש וממשיך לנסות עד שהכל עולה'
   ] },
@@ -944,6 +948,9 @@ function renderPending() {
     el.innerHTML = n ? (ic('cloudOff') + ' ' + n + ' ממתינות') : (cloudEnabled() ? (ic('cloud') + ' מסונכרן') : '');
     el.classList.toggle('hidden', !cloudEnabled());
     el.classList.toggle('pending-on', n > 0);
+    el.style.cursor = 'pointer';
+    if (n > 0) el.title = 'הקש כדי לסנכרן עכשיו';
+    el.onclick = forceSync;   // tap to force a sync and see why it's stuck
   });
   setCloudStatus(n ? 'syncing' : 'ok');
 }
@@ -1645,7 +1652,7 @@ function applyRemoteSettings(settings, at) {
   reconcile(); renderReport(true); renderScanStats();
 }
 
-let syncTimer = null, retryTimer = null, syncing = false, pollTimer = null;
+let syncTimer = null, retryTimer = null, syncing = false, pollTimer = null, syncStartedAt = 0;
 
 function schedulePush() {
   if (!cloudEnabled()) return;
@@ -1654,10 +1661,14 @@ function schedulePush() {
 }
 
 async function pushCloud() {
-  if (!cloudEnabled() || syncing) return;
+  if (!cloudEnabled()) return;
+  // Watchdog: never let a stuck in-flight flag block sync forever. The fetch
+  // timeout should always clear `syncing`, but if anything slips through, an
+  // attempt older than 15s is treated as dead and overridden.
+  if (syncing) { if (Date.now() - syncStartedAt < 15000) return; syncing = false; }
   const barcodes = Object.keys(state.dirty);
   if (!barcodes.length) return;
-  syncing = true;
+  syncing = true; syncStartedAt = Date.now();
   setCloudStatus('syncing');
   const scans = {};
   barcodes.forEach(b => { if (state.scans[b]) scans[b] = state.scans[b].count; });
@@ -1678,6 +1689,36 @@ async function pushCloud() {
   } finally {
     syncing = false;
     if (Object.keys(state.dirty).length && navigator.onLine) schedulePush();
+  }
+}
+
+// Tapping the "ממתינות" chip forces an immediate sync and — unlike the silent
+// background retry — tells the user exactly why it's stuck (no server, can't
+// reach it, auth, timeout), so a frozen counter is diagnosable and clearable.
+async function forceSync() {
+  if (!cloudEnabled()) { uiAlert('לא מוגדר סנכרון ענן. הזן כתובת שרת ושם ספירה בהגדרות → סנכרון ענן.'); return; }
+  syncing = false; clearTimeout(retryTimer);            // clear any stuck in-flight state
+  const pend = Object.keys(state.dirty).length;
+  if (!pend) { pullCloud(); uiAlert('הכל מסונכרן ✓', { title: 'סנכרון' }); return; }
+  setCloudStatus('syncing');
+  const scans = {};
+  Object.keys(state.dirty).forEach(b => { if (state.scans[b]) scans[b] = state.scans[b].count; });
+  try {
+    const res = await fetchT(cloudBase() + '/api/sync', {
+      method: 'POST', headers: cloudHeaders(),
+      body: JSON.stringify({ count_id: state.countId, device: deviceId(), scans })
+    });
+    if (!res.ok) throw new Error('השרת ענה ' + res.status + (res.status === 401 ? ' — מפתח גישה שגוי' : ''));
+    Object.keys(scans).forEach(b => delete state.dirty[b]);
+    Object.keys(state.dirty).forEach(b => { if (!state.scans[b]) delete state.dirty[b]; });  // drop orphans
+    save(); renderPending(); renderScanStats();
+    pullCloud();
+    uiAlert(pend + ' סריקות סונכרנו ✓', { title: 'סנכרון' });
+  } catch (e) {
+    setCloudStatus('offline');
+    const msg = /abort/i.test(e.message) ? 'הבקשה נתקעה (רשת איטית) — נסה שוב' :
+                /fetch|network|Failed/i.test(e.message) ? 'לא הצלחתי להגיע לשרת — בדוק אינטרנט וכתובת שרת (הגדרות → בדוק חיבור)' : e.message;
+    uiAlert('הסנכרון נכשל: ' + msg + '\n\nהסריקות שמורות במכשיר וינסו שוב אוטומטית.', { danger: true, title: 'סנכרון' });
   }
 }
 
