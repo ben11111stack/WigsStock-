@@ -54,8 +54,11 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.13.1';
+const APP_VERSION = '1.13.2';
 const CHANGELOG = [
+  { v: '1.13.2', notes: [
+    'תיקון: מונה "ממתינות לסנכרון" יכל להיתקע אם בקשת רשת "נתקעה" (רשת סלולרית חלשה) — נוסף timeout שמבטיח שהסנכרון תמיד מתאושש וממשיך לנסות עד שהכל עולה'
+  ] },
   { v: '1.13.1', notes: [
     'כתובת ה-Apps Script (כתיבה לשיטס) נטענת עכשיו מהשרת — לא "נעלמת" יותר אם נוקה האחסון או פתחת בדפדפן אחר',
     'המצלמה משתחררת גם במחשב כשעוברים לחלון/אפליקציה אחרת (לא רק בטלפון), וחוזרת כשחוזרים ללשונית הסריקה'
@@ -1575,6 +1578,17 @@ function cloudHeaders() {
   if (state.apiKey) h['x-api-key'] = state.apiKey;
   return h;
 }
+// fetch with a hard timeout. Without it, a hung request (flaky mobile network)
+// never resolves, so pushCloud's `syncing` flag stays stuck true — and because a
+// PWA doesn't reload its JS when you leave and return, every later sync attempt
+// bails and the "ממתינות" counter freezes until a full reload. The abort turns a
+// hang into a normal failure that the retry loop recovers from.
+function fetchT(url, opts, ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms || 12000);
+  return fetch(url, Object.assign({}, opts || {}, { signal: ctrl.signal }))
+    .finally(() => clearTimeout(t));
+}
 function deviceId() { return (state.session && state.session.trim()) || state.deviceId; }
 
 /* ---------- Shared settings sync ----------
@@ -1648,7 +1662,7 @@ async function pushCloud() {
   const scans = {};
   barcodes.forEach(b => { if (state.scans[b]) scans[b] = state.scans[b].count; });
   try {
-    const res = await fetch(cloudBase() + '/api/sync', {
+    const res = await fetchT(cloudBase() + '/api/sync', {
       method: 'POST', headers: cloudHeaders(),
       body: JSON.stringify({ count_id: state.countId, device: deviceId(), scans })
     });
@@ -1670,7 +1684,7 @@ async function pushCloud() {
 async function pullCloud() {
   if (!cloudEnabled()) return;
   try {
-    const res = await fetch(cloudBase() + '/api/scans?count_id=' + encodeURIComponent(state.countId));
+    const res = await fetchT(cloudBase() + '/api/scans?count_id=' + encodeURIComponent(state.countId));
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     // a reset (or a delete correction) elsewhere clears this device's local scans too
