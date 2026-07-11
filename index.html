@@ -344,7 +344,12 @@
         bar.classList.remove('hidden');
         document.getElementById('updateBtn').onclick = () => {
           document.getElementById('updateBtn').textContent = 'מעדכן…';
-          worker.postMessage('SKIP_WAITING');
+          try { worker.postMessage('SKIP_WAITING'); } catch (e) {}
+          // Fallback: if the new worker already activated (install auto-skips
+          // waiting), controllerchange won't fire again and the button would
+          // hang on "מעדכן…". Reload anyway after a moment — core files are
+          // fetched no-store, so the reload lands the new version regardless.
+          setTimeout(() => { if (!refreshing) { refreshing = true; location.reload(); } }, 2500);
         };
       };
       window.addEventListener('load', () => {

@@ -54,8 +54,12 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.13.3';
+const APP_VERSION = '1.13.4';
 const CHANGELOG = [
+  { v: '1.13.4', notes: [
+    'תיקון אמיתי לבאג "ממתינות": הסנכרון תמיד עבד — אבל התגית לא התרעננה אחרי סנכרון רקע, אז היא נתקעה על מספר ישן. עכשיו היא מתעדכנת נכון ל-0',
+    'כפתור "עדכן עכשיו" כבר לא נתקע על "מעדכן…" — נוסף רענון-גיבוי'
+  ] },
   { v: '1.13.3', notes: [
     'אפשר ללחוץ על מונה "ממתינות" כדי לאלץ סנכרון מיידי — והוא מראה בדיוק למה זה נתקע (אין חיבור / כתובת שגויה / רשת איטית)',
     'מנגנון "שומר" שמשחרר סנכרון תקוע אוטומטית אחרי 15 שניות'
@@ -1680,6 +1684,7 @@ async function pushCloud() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     barcodes.forEach(b => delete state.dirty[b]);   // only clear what we sent
     save();
+    renderPending();   // reflect the drained queue — else the badge stays stuck on the old count
     setCloudStatus('ok');
     pullCloud();
   } catch (e) {
@@ -1699,7 +1704,7 @@ async function forceSync() {
   if (!cloudEnabled()) { uiAlert('לא מוגדר סנכרון ענן. הזן כתובת שרת ושם ספירה בהגדרות → סנכרון ענן.'); return; }
   syncing = false; clearTimeout(retryTimer);            // clear any stuck in-flight state
   const pend = Object.keys(state.dirty).length;
-  if (!pend) { pullCloud(); uiAlert('הכל מסונכרן ✓', { title: 'סנכרון' }); return; }
+  if (!pend) { renderPending(); pullCloud(); uiAlert('הכל מסונכרן ✓', { title: 'סנכרון' }); return; }
   setCloudStatus('syncing');
   const scans = {};
   Object.keys(state.dirty).forEach(b => { if (state.scans[b]) scans[b] = state.scans[b].count; });
@@ -1737,7 +1742,7 @@ async function pullCloud() {
     state.cloudDetail = data.detail || {};
     state.cloudDevices = data.devices || 0;
     save();
-    renderReport(); renderScanStats();
+    renderReport(); renderScanStats(); renderPending();
     setCloudStatus('ok', data);
     // adopt shared settings (look + per-wig data) set on any station
     applyRemoteSettings(data.settings, data.settings_at || 0);
