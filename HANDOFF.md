@@ -47,8 +47,9 @@
 - **גיליון המלאי (של המשתמש):** Google Sheet id `17Sem_IwgporhMsXEhVvW7ysIamzc_Ktxv-7molhp35k` (משותף "מציג")
 
 ## ארכיטקטורה (local-first)
-- **Frontend:** vanilla JS, ללא build. `index.html` + `app.js` + `styles.css` + `zxing.min.js`. PWA (manifest + `sw.js`).
-  - סריקה: לולאה ידנית שמציירת פריים ל-canvas ומפענחת עם ZXing `decodeBitmap` + `TRY_HARDER` (ראה `startCamera`/`scanTick` ב-app.js). הגישה הזו נבחרה כי `decodeFromConstraints` לא פענח על מכשירים אמיתיים.
+- **Frontend:** vanilla JS, ללא build. `index.html` + `app.js` + `styles.css` + מנועי סריקה (`zxing-wasm.min.js` + `zxing_reader.wasm` + `zxing.min.js`). PWA (manifest + `sw.js`).
+  - סריקה: לולאה ידנית שמציירת פריים ל-canvas ומפענחת עם **zxing-cpp/WASM** (`ZXingWASM.readBarcodes`, ראה `initWasmEngine`/`scanTick` ב-app.js). המנוע הוחלף ב-1.14.0 כי ה-port הישן של ZXing ל-JS לא פענח את תגי ה-Code 128 המודפסים של החנות (גם בתמונה חדה). ה-JS הישן (`zxing.min.js`, `makeReader`) נשאר כנסיגה אוטומטית לדפדפן בלי WebAssembly.
+  - `zxing-wasm.min.js` נבנה מ-npm `zxing-wasm@3` (reader בלבד) עם esbuild ל-IIFE גלובלי `ZXingWASM`; `zxing_reader.wasm` הוא הבינארי שלצידו (נטען עם `locateFile`, ובקובץ הבודד מוטמע base64).
   - כל סריקה נשמרת מיד ב-`localStorage` (מפתח `wigsstock_v1`), ומסתנכרנת לענן ברקע (debounce 700ms), עם תור אופליין.
 - **Cloud (Cloudflare Worker + D1):** מאחסן סריקות ומאחד בין עמדות. גם: proxy לקריאת הגיליון (עוקף CORS), וכתיבה חזרה לגיליון דרך Apps Script.
 - **Sheets:** המלאי נקרא מהגיליון (proxy). התוצאות נכתבות חזרה ל-3 עמודות (נסרק/תאריך סריקה/עמדה) דרך Apps Script — לא נוגע בעמודות המקוריות.
