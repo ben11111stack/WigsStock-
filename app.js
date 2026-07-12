@@ -54,8 +54,12 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.13.4';
+const APP_VERSION = '1.14.0';
 const CHANGELOG = [
+  { v: '1.14.0', notes: [
+    'מנוע סריקה חדש (zxing-cpp/WASM): תגי הברקוד של הפאות (Code 128) נסרקים עכשיו במצלמה — המנוע הישן פספס אותם גם בתמונה חדה',
+    'המנוע הישן נשאר כגיבוי אוטומטי לדפדפנים בלי WebAssembly; סורק חיצוני והקלדה לא הושפעו'
+  ] },
   { v: '1.13.4', notes: [
     'תיקון אמיתי לבאג "ממתינות": הסנכרון תמיד עבד — אבל התגית לא התרעננה אחרי סנכרון רקע, אז היא נתקעה על מספר ישן. עכשיו היא מתעדכנת נכון ל-0',
     'כפתור "עדכן עכשיו" כבר לא נתקע על "מעדכן…" — נוסף רענון-גיבוי'
@@ -654,14 +658,19 @@ function setupScanInput() {
 }
 
 /* ---------- Camera scanning ----------
- * Uses ZXing on every platform (consistent, and the native BarcodeDetector
- * proved unreliable on some Android builds). TRY_HARDER + an explicit 1D
- * format list are what actually decode real-world barcodes.
+ * Primary engine: zxing-cpp compiled to WebAssembly (zxing-wasm) — decodes
+ * real-world print (the store's Code 128 wig tags) that the old JS ZXing port
+ * consistently missed. The JS port (zxing.min.js) stays as a fallback for the
+ * rare browser without working WebAssembly. Native BarcodeDetector proved
+ * unreliable on some Android builds, so we don't use it.
  * Camera access requires a secure context (https:// or localhost) — opening
  * the file directly from disk on a phone will NOT get the camera; host it
  * (e.g. GitHub Pages) for camera scanning. Hardware scanners work anywhere.
  */
 let cameraOn = false, zxingReader = null, cameraStream = null, scanTimer = null, scanCanvas = null, scanCtx = null;
+let wasmEngineReady = null;   // Promise<boolean>: true → use zxing-wasm, false → old JS ZXing
+let useWasmEngine = false;
+let scanBusy = false;         // a wasm decode is in flight (it's async — never overlap)
 // Auto-release the camera so it never stays busy for other apps: stop it after
 // a stretch with no scans, and whenever the app goes to the background.
 let cameraIdleTimer = null, cameraResumeOnVisible = false;
@@ -686,6 +695,39 @@ function makeReader() {
   return new ZXing.BrowserMultiFormatReader(hints, 100);
 }
 
+// Same format list as makeReader(), in zxing-wasm naming.
+const WASM_READER_OPTS = {
+  formats: ['Code128', 'Code39', 'EAN-13', 'EAN-8', 'UPC-A', 'UPC-E', 'ITF', 'Codabar', 'QRCode'],
+  tryHarder: true, tryRotate: true, tryInvert: true, tryDownscale: true,
+  maxNumberOfSymbols: 1,
+};
+
+/* Initialize the zxing-cpp WASM engine once. The single-file build inlines the
+ * .wasm as base64 (window.__ZXING_WASM_B64, set by build-single.js); the
+ * hosted build fetches zxing_reader.wasm next to the app (cached by the
+ * service worker for offline). Resolves false → caller falls back to the old
+ * JS ZXing engine. */
+function initWasmEngine() {
+  if (wasmEngineReady) return wasmEngineReady;
+  wasmEngineReady = (async () => {
+    if (!window.ZXingWASM || typeof WebAssembly === 'undefined') return false;
+    try {
+      const overrides = {};
+      if (window.__ZXING_WASM_B64) {
+        const bin = atob(window.__ZXING_WASM_B64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        overrides.wasmBinary = bytes.buffer;
+      } else {
+        overrides.locateFile = (p) => /\.wasm$/.test(p) ? 'zxing_reader.wasm' : p;
+      }
+      await ZXingWASM.prepareZXingModule({ overrides, fireImmediately: true });
+      return true;
+    } catch (e) { return false; }   // wasm blocked/missing → old engine still scans
+  })();
+  return wasmEngineReady;
+}
+
 async function startCamera() {
   const btn = $('#cameraBtn');
   if (cameraOn) { stopCamera(); return; }
@@ -694,7 +736,7 @@ async function startCamera() {
     showCamStart('למצלמה צריך כתובת מאובטחת (https) — פתחי מהלינק, לא מקובץ מקומי. בינתיים: סורק חיצוני או הקלדה.');
     return;
   }
-  if (!window.ZXing || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  if ((!window.ZXingWASM && !window.ZXing) || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     showCamStart('הדפדפן לא תומך בגישה למצלמה. השתמשי בסורק חיצוני או בהקלדה.');
     return;
   }
@@ -708,12 +750,15 @@ async function startCamera() {
   setBannerLive();   // show immediately so it never looks stuck on "opening…"
 
   try {
+    // Warm up the WASM engine while the camera is opening (both are async).
+    const wasmReadyP = initWasmEngine();
     cameraStream = await getCameraStream();
     torchOn = false; torchProbed = false;
     video.srcObject = cameraStream;
     video.setAttribute('playsinline', 'true');
     await video.play();
-    zxingReader = makeReader();
+    useWasmEngine = await wasmReadyP;
+    zxingReader = useWasmEngine ? null : makeReader();
     scanCanvas = document.createElement('canvas');
     scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
     scanTick();   // our own decode loop — guarantees frames are actually decoded
@@ -758,9 +803,10 @@ function cameraErrorMessage(e) {
   return 'לא ניתן לגשת למצלמה: ' + ((e && (e.message || e.name)) || e);
 }
 
-/* Grab the current video frame and try to decode it. TRY_HARDER handles
- * rotation/imperfect framing. Decoding the full frame (capped width) each
- * ~90ms is reliable across devices. */
+/* Grab the current video frame and try to decode it. tryHarder/tryRotate
+ * handle rotation/imperfect framing. Decoding the full frame (capped width)
+ * each ~90ms is reliable across devices. The WASM decode is async, so the
+ * next tick is only armed after the current decode finishes (scanBusy). */
 function scanTick() {
   if (!cameraOn) return;
   const video = $('#video');
@@ -771,12 +817,24 @@ function scanTick() {
       const cw = Math.round(vw * scale), ch = Math.round(vh * scale);
       if (scanCanvas.width !== cw) { scanCanvas.width = cw; scanCanvas.height = ch; }
       scanCtx.drawImage(video, 0, 0, cw, ch);
-      const src = new ZXing.HTMLCanvasElementLuminanceSource(scanCanvas);
-      const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(src));
-      try {
-        const res = zxingReader.decodeBitmap(bmp);
-        if (res) recordScan(res.getText());
-      } catch (e) { /* NotFoundException — no barcode this frame */ }
+      if (useWasmEngine) {
+        if (!scanBusy) {
+          scanBusy = true;
+          const frame = scanCtx.getImageData(0, 0, cw, ch);
+          ZXingWASM.readBarcodes(frame, WASM_READER_OPTS).then((found) => {
+            scanBusy = false;
+            // Camera may have been stopped while the decode was in flight.
+            if (cameraOn && found && found[0] && found[0].text) recordScan(found[0].text);
+          }).catch(() => { scanBusy = false; });
+        }
+      } else {
+        const src = new ZXing.HTMLCanvasElementLuminanceSource(scanCanvas);
+        const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(src));
+        try {
+          const res = zxingReader.decodeBitmap(bmp);
+          if (res) recordScan(res.getText());
+        } catch (e) { /* NotFoundException — no barcode this frame */ }
+      }
     }
   } catch (e) { /* frame not ready */ }
   scanTimer = setTimeout(scanTick, 90);
@@ -788,6 +846,7 @@ function isSecureContextForCamera() {
 
 function stopCamera() {
   cameraOn = false;
+  scanBusy = false;
   if (scanTimer) { clearTimeout(scanTimer); scanTimer = null; }
   if (zxingReader) { try { zxingReader.reset(); } catch (e) {} zxingReader = null; }
   if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }

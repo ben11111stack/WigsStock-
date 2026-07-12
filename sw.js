@@ -1,5 +1,5 @@
 /* WigsStock service worker – offline shell, network-first so updates land */
-const CACHE = 'wigsstock-v26';
+const CACHE = 'wigsstock-v27';
 
 self.addEventListener('message', (e) => { if (e.data === 'SKIP_WAITING') self.skipWaiting(); });
 const ASSETS = [
@@ -8,6 +8,8 @@ const ASSETS = [
   './styles.css',
   './app.js',
   './zxing.min.js',
+  './zxing-wasm.min.js',
+  './zxing_reader.wasm',
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png',
