@@ -3,6 +3,22 @@
 אפליקציית **ספירת מלאי פאות** עם סריקת ברקוד, סנכרון ענן בין עמדות, וקריאה/כתיבה מול Google Sheets.
 המסמך הזה מסכם את כל מה שצריך כדי להמשיך. **סטטוס: פרודוקשן, גרסה 1.11.0.**
 
+## 🆕 מה חדש ב-1.16.0 — הרשאות וניהול משתמשים
+- **שתי דרגות אדמין** (`ADMIN_RANKS` ב-app.js וב-worker): `מנג'ר`=2 (מנהל־על), `מרים`=1. שתיהן רואות את ההגדרות הרגישות ויכולות לאפס/לשחזר/לנהל. פעולת ניהול דורשת שהמבצע **יגבר בדרגה** על היעד → מרים לא יכולה לחסום/למחוק את מנג'ר, ואין פעולה על עצמך. `normName()` מנרמל גרש/אפוסטרוף (`' ׳ ’ ′`) כדי ש-`מנג'ר` יזוהה תמיד.
+- **הסתרת הגדרות רגישות** — אקורדיונים עם `data-admin-only` (מלאי משיטס, סטטוסים, סנכרון ענן, כתיבה לשיטס, ניהול משתמשים, איפוס ושחזור) מוסתרים לכל מי שאינו אדמין דרך `applyAdminGate()`. לשאר נשארות רק: מראה, התנהגות, עמדה ומשתמש, גרסאות.
+- **שמות עמדה ייחודיים** — טבלת `stations(count_id, name, device_id, last_seen, blocked, created_at)` ב-D1. `POST /api/claim-name` תופס שם למכשיר (הראשון זוכה); מכשיר אחר יכול להשתלט רק אחרי ש-`last_seen` מתיישן (`CLAIM_STALE_MS`=12ש'). האפליקציה קוראת לזה ב-commit של השם וכ-heartbeat בתוך `pullCloud` (throttle 45ש'). שם תפוס → `onNameCommitted` מציג שגיאה ומאפס.
+- **חסימה** — `POST /api/stations {action:block/unblock/delete/rename}` (אדמין בלבד, כפוף לדירוג). עמדה חסומה: `/api/sync` מחזיר 403, ה-heartbeat מחזיר `blocked:true`, והאפליקציה מציגה `#blockGate` ועוצרת מצלמה (`applyBlockGate`; גם `recordScan` חסום). `GET /api/stations` (אדמין) מחזיר את רשימת המשתמשים + מס' סריקות לכל אחד; `renderUsers()` מציג עם כפתורי חסימה/שינוי-שם/מחיקה לפי דירוג.
+- **אבטחת שרת** — `/api/reset` ו-`/api/restore` דורשים `{by, device_id}` ו-`isAdminReq()` (השם הוא אדמין **ו**הבעלות על ה-claim שלו שייכת למכשיר). דיאלוג `uiPrompt` נוסף למערכת הדיאלוגים (לשינוי שם) — עדיין אף פעם לא `prompt()` native.
+- **נפרס לשרת (10/... )** — ה-Worker נפרס מחדש (`npx wrangler@3 deploy`), הטבלאות `backups`+`stations` נוצרות לבד (`ensureSchema`). נבדק חי מול `deploytest*` (count נפרד; `main` לא נגעו). בדיקות: 48 passed + shim מקומי (Worker) + smoke דפדפן (UI). `sw.js` CACHE = `wigsstock-v29`.
+
+## 🆕 מה חדש ב-1.15.0
+- **איפוס הסריקות עבר להגדרות** — הוסר כפתור ה-reset ממסך הסריקה (`index.html`); נוסף אקורדיון **"איפוס ושחזור"** בהגדרות (לפני "גרסאות ועדכונים") עם תיבת אזהרה (`.danger-note`), כפתור `#resetScansSettings`, ומכל היסטוריה `#resetHistory`.
+- **גיבוי מרכזי בשרת + שחזור מכל עמדה** — הגיבוי נשמר ב-**D1** (לא במכשיר), כדי שכל עמדה תוכל לשחזר גם אם הטלפון שאיפס לא זמין.
+  - **Worker** (`worker/src/worker.js`): טבלת `backups(id, count_id, created_at, by_who, total_scanned, total_count, data)` (`data` = JSON `{barcode:count}`). `POST /api/reset` עכשיו מקבל `{count_id, by}` ולוקח snapshot של `aggregateScans` **לפני** ה-DELETE (cap 50 גיבויים לספירה, prune אוטומטי). נוספו `GET /api/backups?count_id=` (metadata בלבד) ו-`POST /api/restore {count_id, backup_id}` — כותב מחדש את הספירות (device `שחזור`) ומקדם `reset_at` כך שכל העמדות מתכנסות לגיבוי בסנכרון הבא. **צריך redeploy ל-Worker** (ensureSchema יוצר את הטבלה לבד, אין צורך במיגרציה ידנית).
+  - **App** (`app.js`): `doResetScans()` שולח `by=resetByName()` ל-`/api/reset`; אם השרת נכשל — האיפוס לא מתבצע (הסריקות המקומיות נשמרות). `renderResetHistory()` (async) טוען מ-`/api/backups` ומרונדר בפתיחת טאב ההגדרות (`showTab`). `restoreReset(backup)` קורא ל-`/api/restore` ואז `pullCloud()`. אם הענן כבוי — אזהרה שאין גיבוי מרכזי.
+  - **הערה:** שחזור מקדם `reset_at` → עמדות מאבדות סריקות dirty לא-מסונכרנות בחלון הקצר (פעולת התאוששות מכוונת). אחרי שחזור הספירות מיוחסות ל-device `שחזור`.
+- בדיקות: `node tests/run.js` → 48 passed. נבדק e2e (Worker + app) עם D1 shim מקומי. נבנה `wigsstock-app.html`, `sw.js` CACHE = `wigsstock-v28`.
+
 ## 🆕 מה חדש ב-1.11.0
 - **פתיח לוגו מונפש** — האנימציה (`9801e3f0-6luxuryreveal.html` שהמשתמשת סיפקה) שולבה כ-`#splash` ב-`index.html` + CSS מוקדם ב-`styles.css` (מחלקות `sp-*`, מונפש רק תחת `.splash.run`). מנוהל ב-`playSplash()`/`dismissSplash()` (app.js): מתנגן בכל פתיחה, נסגר לבד אחרי ~2.7ש' או בהקשה. **הלוגו בפתיח משתמש ב-`wigsstock.png`** (הלוגו המלא עם הוורדמארק). אם תרצו רקע שקוף מושלם — הפילי `logo-t.png` שקוף והחליפי את ה-`src`.
 - **הלוגו הקטן בכותרת מונפש כל הזמן** (`#hdrLogo`, מחלקות `hl-*`: sway + shimmer). לחיצה עליו מפעילה את הפתיח המלא. **מתג בהגדרות → מראה וצבע → "אנימציה בלוגו הקטן"** (`state.logoAnim`, `applyLogoAnim()`) מכבה **רק** את תנועת הלוגו הקטן; הפתיח בפתיחה ובלחיצה תמיד פועל.

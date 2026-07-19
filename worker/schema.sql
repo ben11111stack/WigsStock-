@@ -27,3 +27,17 @@ CREATE TABLE IF NOT EXISTS meta (
   settings_at  INTEGER,           -- when settings last changed (last-write-wins)
   updated_at   INTEGER
 );
+
+-- Central reset backups: a snapshot of a count's merged totals taken right
+-- before each reset, so ANY station can restore — not just the device that
+-- clicked reset. `data` is a JSON blob of { barcode: count }.
+CREATE TABLE IF NOT EXISTS backups (
+  id            TEXT PRIMARY KEY,  -- unique backup id (timestamp + random suffix)
+  count_id      TEXT NOT NULL,     -- which count this backs up
+  created_at    INTEGER NOT NULL,  -- when the reset (backup) happened
+  by_who        TEXT,              -- station / user who triggered the reset
+  total_scanned INTEGER,           -- distinct barcodes in the snapshot
+  total_count   INTEGER,           -- sum of all counts in the snapshot
+  data          TEXT NOT NULL      -- JSON: { barcode: count, ... }
+);
+CREATE INDEX IF NOT EXISTS idx_backups_count ON backups (count_id, created_at);

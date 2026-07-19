@@ -84,6 +84,10 @@
         </label>
         <button class="btn" id="stationGateSave">שמור והתחל לסרוק</button>
       </div>
+      <div id="blockGate" class="card hidden">
+        <h2><span data-ic="alert" class="gate-ic bad"></span> העמדה נחסמה</h2>
+        <p class="muted small">המנהלת חסמה את העמדה הזו, ולכן לא ניתן לסרוק כרגע. פנו למנהלת כדי לבטל את החסימה.</p>
+      </div>
       <div class="scanner">
         <div id="reader">
           <video id="video" playsinline muted autoplay></video>
@@ -100,7 +104,6 @@
             <button id="batchBtn" class="icon-btn" title="מצב רשימה (באטש)" data-ic="list"></button>
             <button id="flashBtn" class="icon-btn hidden" title="פלאש" data-ic="zap"></button>
             <button id="cameraBtn" class="icon-btn" title="הפעל/עצור מצלמה" data-ic="camera"></button>
-            <button id="resetScans" class="icon-btn danger" title="אפס סריקות" data-ic="reset"></button>
           </span>
         </div>
         <div class="scan-input-row">
@@ -190,7 +193,7 @@
         </div>
       </div>
 
-      <div class="acc">
+      <div class="acc" data-admin-only>
         <button class="acc-head">
           <span class="acc-titles"><span class="acc-title"><span data-ic="download"></span> מלאי מגוגל שיטס</span><span class="acc-sub">טעינת המלאי מקישור לגיליון</span></span>
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -216,7 +219,7 @@
         </div>
       </div>
 
-      <div class="acc">
+      <div class="acc" data-admin-only>
         <button class="acc-head">
           <span class="acc-titles"><span class="acc-title"><span data-ic="bars"></span> סטטוסים</span><span class="acc-sub">הגדרת הסטטוסים ומה נחשב "בחנות"</span></span>
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -226,7 +229,7 @@
         </div>
       </div>
 
-      <div class="acc">
+      <div class="acc" data-admin-only>
         <button class="acc-head">
           <span class="acc-titles"><span class="acc-title"><span data-ic="cloud"></span> סנכרון ענן</span><span class="acc-sub">מצב הסנכרון בין העמדות</span></span>
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -253,7 +256,7 @@
         </div>
       </div>
 
-      <div class="acc">
+      <div class="acc" data-admin-only>
         <button class="acc-head">
           <span class="acc-titles"><span class="acc-title"><span data-ic="upload"></span> כתיבה חזרה לשיטס</span><span class="acc-sub">נסרק / תאריך / עמדה / שם — אוטומטי</span></span>
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -265,6 +268,36 @@
           </label>
           <button class="btn" id="writeBtn">כתוב עכשיו לשיטס</button>
           <p class="small" id="writeNote" style="margin:8px 0 0"></p>
+        </div>
+      </div>
+
+      <div class="acc" data-admin-only>
+        <button class="acc-head">
+          <span class="acc-titles"><span class="acc-title"><span data-ic="users"></span> ניהול משתמשים</span><span class="acc-sub">צפייה, חסימה, שינוי שם ומחיקה של עמדות</span></span>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div id="usersManager"></div>
+        </div>
+      </div>
+
+      <div class="acc" data-admin-only>
+        <button class="acc-head">
+          <span class="acc-titles"><span class="acc-title"><span data-ic="reset"></span> איפוס ושחזור</span><span class="acc-sub">איפוס כל הסריקות — עם גיבוי לשחזור</span></span>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="danger-note">
+            <span class="danger-note-ic" data-ic="alert"></span>
+            <div>
+              <b>אזור מסוכן — לא להשתמש בלי צורך.</b>
+              <p>האיפוס מוחק את <b>כל הסריקות של הספירה בכל העמדות</b> (המלאי, השמות והסטטוסים נשארים). לפני כל איפוס נשמר כאן גיבוי אוטומטי — מי איפס, מתי וכמה נסרק — ואפשר לשחזר ממנו בכל רגע.</p>
+            </div>
+          </div>
+          <button class="btn danger" id="resetScansSettings"><span data-ic="reset"></span> אפס את כל הסריקות</button>
+          <div class="fld-lbl" style="margin-top:22px">היסטוריית גיבויים לשחזור</div>
+          <div class="hint" style="margin:0 0 8px">כל איפוס יוצר נקודת שחזור. הגיבויים נשמרים במכשיר הזה בלבד.</div>
+          <div id="resetHistory"></div>
         </div>
       </div>
 

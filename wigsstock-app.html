@@ -557,6 +557,50 @@ td .ic { width: 15px; height: 15px; }
 .st-add input:focus { outline: none; border-color: var(--primary); }
 .st-add .btn { flex: none; margin: 0; }
 
+/* reset & restore (settings) */
+.danger-note { display: flex; gap: 10px; align-items: flex-start; padding: 12px 13px; margin: 2px 0 14px;
+  border: 1px solid color-mix(in oklab, var(--bad) 40%, var(--line)); border-radius: var(--r);
+  background: color-mix(in oklab, var(--bad) 9%, var(--bg)); }
+.danger-note .danger-note-ic { flex: none; color: var(--bad); display: inline-flex; margin-top: 1px; }
+.danger-note .danger-note-ic svg { width: 20px; height: 20px; }
+.danger-note b { color: color-mix(in oklab, var(--bad) 72%, var(--ink)); }
+.danger-note p { margin: 5px 0 0; font-size: 13px; line-height: 1.55; color: var(--ink-2); }
+.rh-list { display: flex; flex-direction: column; gap: 8px; }
+.rh-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.rh-info { flex: 1 1 auto; min-width: 0; }
+.rh-main { font-size: 14px; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.rh-main svg { width: 15px; height: 15px; color: var(--ink-2); flex: none; }
+.rh-sub { margin-top: 3px; }
+.rh-actions { flex: none; display: flex; align-items: center; gap: 6px; }
+.rh-actions .btn { margin: 0; }
+
+/* user management (settings, admin-only) */
+.u-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.u-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.u-info { flex: 1 1 auto; min-width: 0; }
+.u-main { font-size: 14px; color: var(--ink); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.u-sub { margin-top: 3px; }
+.u-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); flex: none; opacity: .5; }
+.u-dot.on { background: var(--ok); opacity: 1; }
+.u-role { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+  background: color-mix(in oklab, var(--primary) 14%, var(--bg)); color: var(--primary); }
+.u-role.super { background: color-mix(in oklab, var(--warn) 18%, var(--bg)); color: color-mix(in oklab, var(--warn) 72%, var(--ink)); }
+.u-you { font-size: 11px; color: var(--ink-3); }
+.u-blocked { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+  background: color-mix(in oklab, var(--bad) 12%, var(--bg)); color: var(--bad); }
+.u-actions { flex: none; display: flex; align-items: center; gap: 4px; }
+
+/* styled prompt input (inside .ui-dialog) */
+.dlg-input { width: 100%; margin-top: 4px; font-size: 15px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; color: var(--ink); }
+.dlg-input:focus { outline: none; border-color: var(--primary); }
+
+/* blocked-station gate + chip */
+.gate-ic.bad { color: var(--bad); }
+#stationChip.blocked { color: var(--bad); border-color: color-mix(in oklab, var(--bad) 40%, var(--line)); }
+
 /* ---------- In-app dialog (replaces native alert/confirm) ---------- */
 .ui-dialog { align-items: center; padding: 22px; z-index: 90; }
 .ui-dialog .dlg-card { width: 100%; max-width: 360px; border: 1px solid var(--line);
@@ -814,6 +858,10 @@ td .ic { width: 15px; height: 15px; }
         </label>
         <button class="btn" id="stationGateSave">שמור והתחל לסרוק</button>
       </div>
+      <div id="blockGate" class="card hidden">
+        <h2><span data-ic="alert" class="gate-ic bad"></span> העמדה נחסמה</h2>
+        <p class="muted small">המנהלת חסמה את העמדה הזו, ולכן לא ניתן לסרוק כרגע. פנו למנהלת כדי לבטל את החסימה.</p>
+      </div>
       <div class="scanner">
         <div id="reader">
           <video id="video" playsinline muted autoplay></video>
@@ -830,7 +878,6 @@ td .ic { width: 15px; height: 15px; }
             <button id="batchBtn" class="icon-btn" title="מצב רשימה (באטש)" data-ic="list"></button>
             <button id="flashBtn" class="icon-btn hidden" title="פלאש" data-ic="zap"></button>
             <button id="cameraBtn" class="icon-btn" title="הפעל/עצור מצלמה" data-ic="camera"></button>
-            <button id="resetScans" class="icon-btn danger" title="אפס סריקות" data-ic="reset"></button>
           </span>
         </div>
         <div class="scan-input-row">
@@ -920,7 +967,7 @@ td .ic { width: 15px; height: 15px; }
         </div>
       </div>
 
-      <div class="acc">
+      <div class="acc" data-admin-only>
         <button class="acc-head">
           <span class="acc-titles"><span class="acc-title"><span data-ic="download"></span> מלאי מגוגל שיטס</span><span class="acc-sub">טעינת המלאי מקישור לגיליון</span></span>
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -946,7 +993,7 @@ td .ic { width: 15px; height: 15px; }
         </div>
       </div>
 
-      <div class="acc">
+      <div class="acc" data-admin-only>
         <button class="acc-head">
           <span class="acc-titles"><span class="acc-title"><span data-ic="bars"></span> סטטוסים</span><span class="acc-sub">הגדרת הסטטוסים ומה נחשב "בחנות"</span></span>
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -956,7 +1003,7 @@ td .ic { width: 15px; height: 15px; }
         </div>
       </div>
 
-      <div class="acc">
+      <div class="acc" data-admin-only>
         <button class="acc-head">
           <span class="acc-titles"><span class="acc-title"><span data-ic="cloud"></span> סנכרון ענן</span><span class="acc-sub">מצב הסנכרון בין העמדות</span></span>
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -983,7 +1030,7 @@ td .ic { width: 15px; height: 15px; }
         </div>
       </div>
 
-      <div class="acc">
+      <div class="acc" data-admin-only>
         <button class="acc-head">
           <span class="acc-titles"><span class="acc-title"><span data-ic="upload"></span> כתיבה חזרה לשיטס</span><span class="acc-sub">נסרק / תאריך / עמדה / שם — אוטומטי</span></span>
           <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -995,6 +1042,36 @@ td .ic { width: 15px; height: 15px; }
           </label>
           <button class="btn" id="writeBtn">כתוב עכשיו לשיטס</button>
           <p class="small" id="writeNote" style="margin:8px 0 0"></p>
+        </div>
+      </div>
+
+      <div class="acc" data-admin-only>
+        <button class="acc-head">
+          <span class="acc-titles"><span class="acc-title"><span data-ic="users"></span> ניהול משתמשים</span><span class="acc-sub">צפייה, חסימה, שינוי שם ומחיקה של עמדות</span></span>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div id="usersManager"></div>
+        </div>
+      </div>
+
+      <div class="acc" data-admin-only>
+        <button class="acc-head">
+          <span class="acc-titles"><span class="acc-title"><span data-ic="reset"></span> איפוס ושחזור</span><span class="acc-sub">איפוס כל הסריקות — עם גיבוי לשחזור</span></span>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="danger-note">
+            <span class="danger-note-ic" data-ic="alert"></span>
+            <div>
+              <b>אזור מסוכן — לא להשתמש בלי צורך.</b>
+              <p>האיפוס מוחק את <b>כל הסריקות של הספירה בכל העמדות</b> (המלאי, השמות והסטטוסים נשארים). לפני כל איפוס נשמר כאן גיבוי אוטומטי — מי איפס, מתי וכמה נסרק — ואפשר לשחזר ממנו בכל רגע.</p>
+            </div>
+          </div>
+          <button class="btn danger" id="resetScansSettings"><span data-ic="reset"></span> אפס את כל הסריקות</button>
+          <div class="fld-lbl" style="margin-top:22px">היסטוריית גיבויים לשחזור</div>
+          <div class="hint" style="margin:0 0 8px">כל איפוס יוצר נקודת שחזור. הגיבויים נשמרים במכשיר הזה בלבד.</div>
+          <div id="resetHistory"></div>
         </div>
       </div>
 
@@ -1125,8 +1202,18 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.14.0';
+const APP_VERSION = '1.16.0';
 const CHANGELOG = [
+  { v: '1.16.0', notes: [
+    'הרשאות: רק "מרים" ו-"מנג\'ר" (מנהל־על) רואות את ההגדרות הרגישות ויכולות לאפס/לשחזר. לשאר העמדות מוצגות רק הגדרות בסיסיות (מראה, התנהגות, עמדה, גרסה)',
+    'ניהול משתמשים למנהלות: צפייה בכל העמדות, חסימה, שינוי שם ומחיקה. מרים אינה יכולה לחסום/למחוק את מנג\'ר',
+    'שמות עמדה ייחודיים: אי אפשר לפתוח שתי עמדות באותו שם — הראשונה תופסת אותו',
+    'עמדה חסומה אינה יכולה לסרוק, וכל האיפוסים/השחזורים מאובטחים גם בשרת'
+  ] },
+  { v: '1.15.0', notes: [
+    'איפוס הסריקות עבר ממסך הסריקה להגדרות → "איפוס ושחזור", עם אזהרה ואישור לפני מחיקה',
+    'לפני כל איפוס נשמר גיבוי אוטומטי בשרת (מי איפס, מתי וכמה נסרק) — כל עמדה יכולה לשחזר ממנו את כל הסריקות בכל רגע, גם אם המכשיר שאיפס לא זמין'
+  ] },
   { v: '1.14.0', notes: [
     'מנוע סריקה חדש (zxing-cpp/WASM): תגי הברקוד של הפאות (Code 128) נסרקים עכשיו במצלמה — המנוע הישן פספס אותם גם בתמונה חדה',
     'המנוע הישן נשאר כגיבוי אוטומטי לדפדפנים בלי WebAssembly; סורק חיצוני והקלדה לא הושפעו'
@@ -1266,6 +1353,22 @@ const TABS = [
 ];
 function defaultTab() { return TABS.some(t => t.id === state.defaultTab) ? state.defaultTab : 'scan'; }
 
+/* ---------- Access control (admins) ----------
+ * Two admin names by rank: "מנג'ר" (super-admin) outranks "מרים". Both can reset,
+ * restore, manage users, and see the sensitive settings; everyone else sees only
+ * the basic ones and can't reset. A management action needs the actor to strictly
+ * outrank the target, so מרים can't block/remove מנג'ר. Names are matched with
+ * apostrophe variants normalized (' ׳ ’ ′). Mirrors the Worker's rules — the
+ * server is the real gate; this just shapes the UI. */
+const ADMIN_RANKS = { "מנג'ר": 2, 'מרים': 1 };
+function normName(s) { return String(s || '').trim().replace(/[׳’′ʼ]/g, "'"); }
+function adminRank(name) { return ADMIN_RANKS[normName(name)] || 0; }
+function isAdmin() { return adminRank(state.session) >= 1; }
+
+// Live claim state for this station (from /api/claim-name): are we the owner of
+// our name, and has the admin blocked us?
+let stationClaim = { owner: true, blocked: false, taken: false };
+
 /* ---------- Per-wig helpers ----------
  * Effective status = a card override if one was set, else the sheet's value.
  * Effective name = an in-app edit, else the sheet's name column, else empty. */
@@ -1354,27 +1457,31 @@ function uiDialog(opts) {
     const wrap = document.createElement('div');
     wrap.className = 'modal ui-dialog';
     const hasCancel = opts.cancelText !== null && opts.cancelText !== undefined;
+    const isPrompt = !!opts.prompt;
     wrap.innerHTML =
       `<div class="modal-card dlg-card" role="alertdialog" aria-modal="true">` +
         (opts.title ? `<div class="dlg-title">${esc(opts.title)}</div>` : '') +
         `<div class="dlg-msg">${esc(opts.message || '').replace(/\n/g, '<br>')}</div>` +
+        (isPrompt ? `<input class="dlg-input" type="text" autocomplete="off" value="${esc(opts.value || '')}" maxlength="${opts.maxlength || 24}">` : '') +
         `<div class="dlg-actions">` +
           (hasCancel ? `<button type="button" class="btn ghost dlg-cancel">${esc(opts.cancelText || 'ביטול')}</button>` : '') +
           `<button type="button" class="btn${opts.danger ? ' danger' : ''} dlg-ok">${esc(opts.confirmText || 'אישור')}</button>` +
         `</div>` +
       `</div>`;
     document.body.appendChild(wrap);
+    const input = wrap.querySelector('.dlg-input');
+    const okVal = () => (isPrompt ? (input ? input.value : '') : true);
     const finish = (val) => { document.removeEventListener('keydown', onKey, true); wrap.remove(); resolve(val); };
     const onKey = (e) => {
-      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
-      else if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      if (e.key === 'Escape') { e.preventDefault(); finish(isPrompt ? null : false); }
+      else if (e.key === 'Enter') { e.preventDefault(); finish(okVal()); }
     };
-    wrap.querySelector('.dlg-ok').addEventListener('click', () => finish(true));
+    wrap.querySelector('.dlg-ok').addEventListener('click', () => finish(okVal()));
     const cancelBtn = wrap.querySelector('.dlg-cancel');
-    if (cancelBtn) cancelBtn.addEventListener('click', () => finish(false));
-    wrap.addEventListener('click', (e) => { if (e.target === wrap) finish(false); });
+    if (cancelBtn) cancelBtn.addEventListener('click', () => finish(isPrompt ? null : false));
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) finish(isPrompt ? null : false); });
     document.addEventListener('keydown', onKey, true);
-    setTimeout(() => { const b = wrap.querySelector('.dlg-ok'); if (b) b.focus(); }, 20);
+    setTimeout(() => { const b = input || wrap.querySelector('.dlg-ok'); if (b) { b.focus(); if (input) input.select(); } }, 20);
   });
 }
 function uiAlert(message, opts) {
@@ -1384,6 +1491,13 @@ function uiAlert(message, opts) {
 function uiConfirm(message, opts) {
   opts = opts || {};
   return uiDialog({ title: opts.title, message, confirmText: opts.confirmText || 'אישור', cancelText: opts.cancelText || 'ביטול', danger: opts.danger });
+}
+// Styled text prompt (never the native prompt()). Resolves to the string, or
+// null if cancelled/dismissed.
+function uiPrompt(message, opts) {
+  opts = opts || {};
+  return uiDialog({ prompt: true, title: opts.title, message, value: opts.value || '',
+    maxlength: opts.maxlength, confirmText: opts.confirmText || 'אישור', cancelText: opts.cancelText || 'ביטול' });
 }
 
 /* Normalize a barcode for matching. The sheet import and every scan pass through
@@ -1584,6 +1698,7 @@ function recordScan(rawCode, opts) {
   const code = normBarcode(rawCode);
   if (!code) return;
   if (!hasStation()) { applyStationGate(); return; }   // never record without a station
+  if (stationClaim.blocked) { applyBlockGate(); return; }   // blocked by the admin
 
   // Debounce: ignore the same code fired twice within 1.2s (camera repeats).
   const now = Date.now();
@@ -2874,6 +2989,8 @@ async function pullCloud() {
     save();
     renderReport(); renderScanStats(); renderPending();
     setCloudStatus('ok', data);
+    // heartbeat our name claim + refresh block state (throttled inside claimName)
+    if (hasStation()) claimName(false);
     // adopt shared settings (look + per-wig data) set on any station
     applyRemoteSettings(data.settings, data.settings_at || 0);
     // adopt the shared inventory source set by the manager (loads it on every station)
@@ -3050,6 +3167,7 @@ function showTab(name) {
   if (name !== 'report') closeLookupScan();           // free the lookup camera when leaving the report
   if (name === 'report') { renderReport(); if (cloudEnabled()) pullCloud(); }   // refresh across stations
   if (name === 'export') renderExportPreview();
+  if (name === 'settings') { applyAdminGate(); renderResetHistory(); renderUsers(); }   // admin-only sections
   if (name === 'scan') {
     // require a station name first; start camera within the tap so iOS allows it
     if (applyStationGate()) { setTimeout(() => $('#stationGateInput').focus(), 60); }
@@ -3074,21 +3192,25 @@ function init() {
   // paint all static [data-ic] placeholders from the one icon set
   $$('[data-ic]').forEach(el => { el.innerHTML = ic(el.getAttribute('data-ic')); });
 
-  // session / station name (now lives in Settings; mandatory before scanning)
+  // session / station name (now lives in Settings; mandatory before scanning).
+  // Typing updates locally; committing (blur) claims the unique name on the
+  // server and reacts to taken/blocked.
   const sess = $('#sessionName');
   sess.value = state.session || '';
   sess.addEventListener('input', () => { state.session = sess.value; save(); setCloudStatus(); updateStationChip(); });
+  sess.addEventListener('change', () => onNameCommitted(sess.value, sess));
   updateStationChip();
   $('#stationChip').addEventListener('click', () => navigate('settings'));
 
   // mandatory-station gate on the scan tab
-  $('#stationGateSave').addEventListener('click', () => {
+  $('#stationGateSave').addEventListener('click', async () => {
     const v = $('#stationGateInput').value.trim();
     if (!v) { $('#stationGateInput').focus(); return; }
-    state.session = v; sess.value = v; save();
-    updateStationChip(); setCloudStatus();
+    await onNameCommitted(v, sess);
+    if (!hasStation()) { $('#stationGateInput').value = ''; $('#stationGateInput').focus(); return; }  // name was taken → stay on gate
+    $('#stationGateInput').value = state.session;
     applyStationGate();
-    ensureCamera();
+    if (!stationClaim.blocked) ensureCamera();
   });
 
   // stable device id fallback (used if no station name is typed)
@@ -3254,26 +3376,10 @@ function init() {
   $('#camStart').addEventListener('click', startCamera);   // tap-to-start (required on iOS)
   $('#flashBtn').addEventListener('click', toggleTorch);
 
-  // reset scans
-  $('#resetScans').addEventListener('click', async () => {
-    if (!(await uiConfirm('לאפס את כל הסריקות של הספירה הזו?\n(כולל בענן — לכל העמדות. המלאי יישאר)', { danger: true, confirmText: 'אפס' }))) return;
-    state.scans = {}; state.dirty = {}; state.cloudScans = {}; state.sessionLog = [];
-    undoStack.length = 0; redoStack.length = 0; updateUndoRedo();
-    save();
-    if (cloudEnabled()) {
-      try {
-        const rr = await fetch(cloudBase() + '/api/reset', {
-          method: 'POST', headers: cloudHeaders(),
-          body: JSON.stringify({ count_id: state.countId })
-        });
-        const rj = await rr.json().catch(() => ({}));
-        if (rj.reset_at) { state.lastResetSeen = rj.reset_at; save(); }   // don't re-trigger on our own reset
-      } catch (e) { uiAlert('אופס מקומי בוצע, אך לא הצלחתי לאפס בענן: ' + e.message, { danger: true }); }
-    }
-    renderReport(); renderScanStats(); renderPending(); renderSessionLog();
-    $('#scanBanner').className = 'scan-banner';
-    $('#scanBanner').innerHTML = '<div class="msg muted">מוכן לסריקה…</div>';
-  });
+  // reset scans (moved to Settings → איפוס ושחזור). History loads lazily when
+  // the Settings tab opens (see showTab), so no network call on every launch.
+  const resetSettingsBtn = $('#resetScansSettings');
+  if (resetSettingsBtn) resetSettingsBtn.addEventListener('click', doResetScans);
 
   // undo / redo / batch mode
   const undoBtn = $('#undoBtn'), redoBtn = $('#redoBtn'), batchBtn = $('#batchBtn');
@@ -3326,6 +3432,11 @@ function init() {
   renderReport();
   renderPending();
   renderSessionLog();
+
+  // access control: show sensitive settings only to admins; claim our name on
+  // the server (uniqueness + block state) and heartbeat from there on.
+  applyAdminGate();
+  if (cloudEnabled() && hasStation()) claimName(true).then(() => renderUsers());
 
   // landing view — the tab chosen in Settings (default: scan); seed history so back walks tabs
   const start = defaultTab();
@@ -3460,6 +3571,284 @@ function renderStatusManager() {
     renderStatusManager(); renderReport(true); renderScanStats(); renderInventoryStatus();
   });
 }
+/* ---------- Scan reset + restore (Settings → איפוס ושחזור) ----------
+ * Reset wipes every scan of the current count across ALL stations (via
+ * /api/reset). It's destructive, so the SERVER snapshots the merged totals into
+ * a shared `backups` table BEFORE wiping — recording WHO reset, WHEN and HOW
+ * MUCH. Because the backup lives on the server (not the device that clicked
+ * reset), ANY station can list it (/api/backups) and restore it (/api/restore),
+ * even if the resetting phone is gone. Restore rewrites the cloud counts and
+ * bumps reset_at so every station converges on the restored snapshot. */
+function fmtResetTime(ts) {
+  try { return new Date(ts).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }); }
+  catch (e) { return new Date(ts).toLocaleString(); }
+}
+function resetByName() { return (state.session || '').trim() || (state.deviceId || 'לא ידוע'); }
+
+async function doResetScans() {
+  const merged = effectiveScans();
+  const bcs = Object.keys(merged);
+  const totalCount = bcs.reduce((s, k) => s + (merged[k] ? merged[k].count || 0 : 0), 0);
+
+  if (!cloudEnabled()) {
+    // No shared server → no central backup. Warn clearly before allowing it.
+    const go = await uiConfirm(
+      'סנכרון הענן כבוי, ולכן לא ניתן לשמור גיבוי מרכזי לשחזור.\n\n' +
+      'איפוס עכשיו ימחק את הסריקות ללא אפשרות שחזור. מומלץ להפעיל סנכרון ענן (הגדרות → סנכרון ענן) לפני איפוס.\n\n' +
+      'לאפס בכל זאת, בלי גיבוי?',
+      { title: 'אזהרה — אין גיבוי', danger: true, confirmText: 'אפס בלי גיבוי', cancelText: 'ביטול' }
+    );
+    if (!go) return;
+    state.scans = {}; state.dirty = {}; state.cloudScans = {}; state.sessionLog = [];
+    undoStack.length = 0; redoStack.length = 0; updateUndoRedo();
+    save();
+    renderReport(true); renderScanStats(); renderPending(); renderSessionLog();
+    const sb0 = $('#scanBanner');
+    if (sb0) { sb0.className = 'scan-banner'; sb0.innerHTML = '<div class="msg muted">מוכן לסריקה…</div>'; }
+    return;
+  }
+
+  const ok = await uiConfirm(
+    'האם את בטוחה שברצונך לאפס את כל הסריקות?\n\n' +
+    'הפעולה מוחקת את כל ' + totalCount.toLocaleString() + ' הסריקות של הספירה — בכל העמדות. ' +
+    'לא ניתן לסרוק אותן חזרה אוטומטית. המלאי, השמות והסטטוסים יישארו.\n\n' +
+    'לפני האיפוס יישמר גיבוי בשרת (עם השם "' + resetByName() + '"), ותוכלי לשחזר ממנו מכל עמדה, בכל רגע.',
+    { title: 'אזהרה — איפוס סריקות', danger: true, confirmText: 'כן, אפס הכל', cancelText: 'ביטול' }
+  );
+  if (!ok) return;
+
+  // Server snapshots to `backups` before wiping. Send who is resetting.
+  let backupId = null;
+  try {
+    const rr = await fetch(cloudBase() + '/api/reset', {
+      method: 'POST', headers: cloudHeaders(),
+      body: JSON.stringify({ count_id: state.countId, by: normName(state.session), device_id: state.deviceId })
+    });
+    const rj = await rr.json().catch(() => ({}));
+    if (!rr.ok) throw new Error(rj.error || ('השרת ענה ' + rr.status));
+    backupId = rj.backup_id || null;
+    if (rj.reset_at) state.lastResetSeen = rj.reset_at;   // don't re-trigger on our own reset
+  } catch (e) {
+    uiAlert('האיפוס לא בוצע — לא הצלחתי להגיע לשרת: ' + e.message + '\nהסריקות נשמרו כפי שהן.', { danger: true, title: 'האיפוס נכשל' });
+    return;   // keep local scans intact if the server (and therefore the backup) failed
+  }
+
+  // Server wiped + backed up. Now clear locally to match.
+  state.scans = {}; state.dirty = {}; state.cloudScans = {}; state.sessionLog = [];
+  undoStack.length = 0; redoStack.length = 0; updateUndoRedo();
+  save();
+  renderReport(true); renderScanStats(); renderPending(); renderSessionLog(); renderResetHistory();
+  const sb = $('#scanBanner');
+  if (sb) { sb.className = 'scan-banner'; sb.innerHTML = '<div class="msg muted">מוכן לסריקה…</div>'; }
+  uiAlert(backupId
+    ? 'הסריקות אופסו. גיבוי נשמר בשרת תחת "היסטוריית גיבויים לשחזור" — אפשר לשחזר ממנו מכל עמדה.'
+    : 'הסריקות אופסו. (לא היו סריקות לגבות.)', { title: 'האיפוס הושלם' });
+}
+
+async function restoreReset(backup) {
+  const ok = await uiConfirm(
+    'לשחזר את הגיבוי מ-' + fmtResetTime(backup.created_at) + ' (' + (backup.by || 'לא ידוע') + ')?\n\n' +
+    (backup.total_scanned || 0).toLocaleString() + ' פאות (' + (backup.total_count || 0).toLocaleString() + ' סריקות) יוחזרו לכל העמדות. ' +
+    'הסריקות הנוכחיות בספירה יוחלפו בגיבוי הזה.',
+    { title: 'שחזור מגיבוי', confirmText: 'שחזר', cancelText: 'ביטול' }
+  );
+  if (!ok) return;
+
+  try {
+    const rr = await fetch(cloudBase() + '/api/restore', {
+      method: 'POST', headers: cloudHeaders(),
+      body: JSON.stringify({ count_id: state.countId, backup_id: backup.id, by: normName(state.session), device_id: state.deviceId })
+    });
+    const rj = await rr.json().catch(() => ({}));
+    if (!rr.ok) throw new Error(rj.error || ('השרת ענה ' + rr.status));
+    if (rj.reset_at) state.lastResetSeen = rj.reset_at;   // we already know about this generation
+    // clear local then pull the restored totals the server just wrote
+    state.scans = {}; state.dirty = {}; state.cloudScans = {}; state.sessionLog = [];
+    undoStack.length = 0; redoStack.length = 0; updateUndoRedo();
+    save();
+    await pullCloud();
+    renderReport(true); renderScanStats(); renderPending(); renderSessionLog();
+    uiAlert('שוחזרו ' + (rj.restored || backup.total_scanned || 0).toLocaleString() +
+      ' פאות מהגיבוי. הסריקות חזרו לענן ולכל העמדות.', { title: 'השחזור הושלם' });
+  } catch (e) {
+    uiAlert('השחזור נכשל: ' + e.message, { danger: true, title: 'שחזור' });
+  }
+}
+
+async function renderResetHistory() {
+  const el = $('#resetHistory');
+  if (!el) return;
+  if (!cloudEnabled()) {
+    el.innerHTML = '<p class="muted small" style="margin:0">היסטוריית הגיבויים נשמרת בשרת וזמינה כשסנכרון הענן דלוק (הגדרות → סנכרון ענן).</p>';
+    return;
+  }
+  el.innerHTML = '<p class="muted small" style="margin:0">טוען גיבויים…</p>';
+  let backups = [];
+  try {
+    const res = await fetchT(cloudBase() + '/api/backups?count_id=' + encodeURIComponent(state.countId));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    backups = data.backups || [];
+  } catch (e) {
+    el.innerHTML = '<p class="small" style="margin:0;color:var(--bad)">לא הצלחתי לטעון גיבויים מהשרת: ' + esc(e.message) + '</p>';
+    return;
+  }
+  if (!backups.length) {
+    el.innerHTML = '<p class="muted small" style="margin:0">אין עדיין גיבויים. גיבוי נוצר אוטומטית בשרת בכל איפוס.</p>';
+    return;
+  }
+  el.innerHTML = '<div class="rh-list">' + backups.map((b, i) => `
+    <div class="rh-row" data-rh-i="${i}">
+      <div class="rh-info">
+        <div class="rh-main">${ic('user')} <b>${esc(b.by || 'לא ידוע')}</b> · ${esc(fmtResetTime(b.created_at))}</div>
+        <div class="rh-sub muted small">${(b.total_scanned || 0).toLocaleString()} פאות · ${(b.total_count || 0).toLocaleString()} סריקות</div>
+      </div>
+      <div class="rh-actions">
+        <button class="btn secondary small-btn rh-restore">${ic('undo')} שחזר</button>
+      </div>
+    </div>`).join('') + '</div>';
+
+  el.querySelectorAll('.rh-row').forEach(row => {
+    const b = backups[+row.getAttribute('data-rh-i')];
+    const rb = row.querySelector('.rh-restore');
+    if (rb) rb.addEventListener('click', () => restoreReset(b));
+  });
+}
+
+/* ---------- Station name claim + block + user management ----------
+ * Every station registers its name with the server (unique per count). The call
+ * doubles as a heartbeat (keeps the claim fresh) and tells us if the admin has
+ * blocked us. Admins additionally get the user-management UI below. */
+let lastClaimAt = 0;
+async function claimName(force) {
+  if (!cloudEnabled() || !hasStation()) return null;
+  const now = Date.now();
+  if (!force && now - lastClaimAt < 45000) return stationClaim;   // heartbeat throttle
+  lastClaimAt = now;
+  try {
+    const r = await fetch(cloudBase() + '/api/claim-name', {
+      method: 'POST', headers: cloudHeaders(),
+      body: JSON.stringify({ count_id: state.countId, name: normName(state.session), device_id: state.deviceId })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 409 || j.taken) stationClaim = { owner: false, blocked: false, taken: true };
+    else stationClaim = { owner: !!j.owner, blocked: !!j.blocked, taken: false };
+  } catch (e) { /* keep last known claim state on a network blip */ }
+  applyBlockGate();
+  return stationClaim;
+}
+
+// Blocked station: cover the scan tab with a lock message and stop the camera.
+function applyBlockGate() {
+  const gate = $('#blockGate');
+  const scanner = document.querySelector('#panel-scan .scanner');
+  const blocked = !!stationClaim.blocked;
+  if (gate) gate.classList.toggle('hidden', !blocked);
+  if (blocked) {
+    if (scanner) scanner.classList.add('hidden');
+    stopCamera();
+  } else if (scanner && hasStation()) {
+    scanner.classList.remove('hidden');
+  }
+  const chip = $('#stationChip');
+  if (chip) chip.classList.toggle('blocked', blocked);
+}
+
+// Show/hide the sensitive settings: only admins (מרים / מנג'ר) see them.
+function applyAdminGate() {
+  const admin = isAdmin();
+  document.querySelectorAll('[data-admin-only]').forEach(el => el.classList.toggle('hidden', !admin));
+}
+
+// When the station name is committed (blur / gate save): normalize, claim it,
+// and react to "taken" / "blocked". Reverts a taken name so no two stations
+// share one, and refreshes the admin gate + user list.
+async function onNameCommitted(raw, el) {
+  const name = normName(raw);
+  state.session = name; if (el) el.value = name; save();
+  updateStationChip(); setCloudStatus(); applyAdminGate();
+  if (!name || !cloudEnabled()) { applyBlockGate(); return; }
+  const c = await claimName(true);
+  if (c && c.taken) {
+    await uiAlert('השם "' + name + '" כבר בשימוש בעמדה אחרת. בחרי שם אחר.', { danger: true, title: 'שם תפוס' });
+    state.session = ''; if (el) el.value = '';
+    const sess = $('#sessionName'); if (sess) sess.value = '';
+    save(); updateStationChip(); setCloudStatus(); applyAdminGate(); applyStationGate();
+    stationClaim = { owner: false, blocked: false, taken: true };
+    return;
+  }
+  applyAdminGate();
+  renderUsers();
+  if (c && c.blocked) uiAlert('העמדה הזו נחסמה על ידי המנהלת. לא ניתן לסרוק.', { danger: true, title: 'עמדה חסומה' });
+}
+
+// Admin: list all stations/users with block / rename / delete controls.
+async function renderUsers() {
+  const el = $('#usersManager');
+  if (!el) return;
+  if (!isAdmin() || !cloudEnabled()) { el.innerHTML = ''; return; }
+  el.innerHTML = '<p class="muted small" style="margin:0">טוען משתמשים…</p>';
+  let data;
+  try {
+    const r = await fetchT(cloudBase() + '/api/stations?count_id=' + encodeURIComponent(state.countId) +
+      '&by=' + encodeURIComponent(normName(state.session)) + '&device_id=' + encodeURIComponent(state.deviceId));
+    data = await r.json();
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+  } catch (e) {
+    el.innerHTML = '<p class="small" style="margin:0;color:var(--bad)">לא הצלחתי לטעון משתמשים: ' + esc(e.message) + '</p>';
+    return;
+  }
+  const myRank = data.actor_rank || adminRank(state.session);
+  const list = data.stations || [];
+  const rows = list.map((s, i) => {
+    const canManage = myRank > s.rank;
+    const role = s.rank >= 2 ? '<span class="u-role super">מנהל־על</span>'
+               : s.rank >= 1 ? '<span class="u-role admin">מנהלת</span>' : '';
+    const actions = canManage ? `
+        <button class="icon-btn u-block" title="${s.blocked ? 'בטל חסימה' : 'חסום'}">${ic(s.blocked ? 'check' : 'alert')}</button>
+        <button class="icon-btn u-rename" title="שנה שם">${ic('edit')}</button>
+        <button class="icon-btn danger u-del" title="מחק">${ic('trash')}</button>`
+      : '<span class="muted small">—</span>';
+    return `<div class="u-row" data-u-i="${i}">
+      <div class="u-info">
+        <div class="u-main"><span class="u-dot${s.online ? ' on' : ''}"></span><b>${esc(s.name)}</b>${role}${s.is_you ? ' <span class="u-you">(את/ה)</span>' : ''}${s.blocked ? ' <span class="u-blocked">חסום</span>' : ''}</div>
+        <div class="u-sub muted small">${(s.scans || 0).toLocaleString()} סריקות</div>
+      </div>
+      <div class="u-actions">${actions}</div>
+    </div>`;
+  }).join('');
+  el.innerHTML =
+    `<p class="muted small">כל העמדות בספירה. חסימה מונעת סריקה. ${myRank >= 2 ? '' : 'אינך יכולה לנהל מנהלים בדרגה שווה או גבוהה.'}</p>` +
+    `<div class="u-list">${rows || '<p class="muted small">אין עדיין עמדות.</p>'}</div>`;
+
+  el.querySelectorAll('.u-row').forEach(row => {
+    const s = list[+row.getAttribute('data-u-i')];
+    const bl = row.querySelector('.u-block'), rn = row.querySelector('.u-rename'), dl = row.querySelector('.u-del');
+    if (bl) bl.addEventListener('click', () => userAction(s.blocked ? 'unblock' : 'block', s.name));
+    if (rn) rn.addEventListener('click', async () => {
+      const nn = await uiPrompt('שם חדש עבור "' + s.name + '":', { title: 'שינוי שם', value: s.name, confirmText: 'שמור' });
+      if (nn && normName(nn) && normName(nn) !== s.name) userAction('rename', s.name, normName(nn));
+    });
+    if (dl) dl.addEventListener('click', async () => {
+      if (await uiConfirm('למחוק את "' + s.name + '"? הרישום יוסר והשם יתפנה לשימוש מחדש. (הסריקות שלו נשארות בספירה.)', { danger: true, title: 'מחיקת משתמש', confirmText: 'מחק' }))
+        userAction('delete', s.name);
+    });
+  });
+}
+
+async function userAction(action, name, newName) {
+  try {
+    const r = await fetch(cloudBase() + '/api/stations', {
+      method: 'POST', headers: cloudHeaders(),
+      body: JSON.stringify({ count_id: state.countId, by: normName(state.session), device_id: state.deviceId, action, name, new_name: newName })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || ('השרת ענה ' + r.status));
+    renderUsers();
+    if (cloudEnabled()) pullCloud();
+  } catch (e) { uiAlert('הפעולה נכשלה: ' + e.message, { danger: true, title: 'ניהול משתמשים' }); }
+}
+
 function renderTheme() {
   const wrap = $('#accentSwatches');
   if (!wrap) return;
