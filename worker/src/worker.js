@@ -84,7 +84,7 @@ async function ensureSchema(env) {
   ).run();
   try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_backups_count ON backups(count_id, created_at)`).run(); } catch (e) { /* exists */ }
   // Station registry: one row per station NAME per count. Enforces unique names
-  // (first device to claim a name owns it) and lets the admin (מרים) see, rename,
+  // (first device to claim a name owns it) and lets admins see, rename,
   // delete and block users. `device_id` is the claimer's stable id; `last_seen`
   // is a heartbeat so an abandoned name can be reclaimed after it goes stale.
   await env.DB.prepare(
@@ -102,16 +102,34 @@ const MAX_BACKUP_BLOB = 4000000;
 const MAX_BACKUPS_PER_COUNT = 50;
 
 // ---- Access control -------------------------------------------------------
-// Two admin names, by rank. "מנג'ר" (manager) is the super-admin; "מרים" is an
-// admin. BOTH can reset, restore, and manage users, and both see the sensitive
-// settings. A user-management action (block/delete/rename) needs the actor to
-// STRICTLY outrank the target — so מרים can't touch מנג'ר, neither admin can act
-// on an equal, and nobody can act on themselves. This is a SOFT gate (the app
-// runs in a browser), backed by unique-name claiming so a second device can't
-// pose as an admin. Apostrophe variants in מנג'ר are normalized so ' ׳ ’ ′ match.
-const ADMIN_RANKS = { "מנג'ר": 2, 'מרים': 1 };
+// Admins are defined by rank. Any admin (rank >= 1) can reset, restore, manage
+// users, and see the sensitive settings. A user-management action (block/delete/
+// rename) needs the actor to STRICTLY outrank the target — so a lower-ranked
+// admin can't touch a higher one, no admin can act on an equal, and nobody can
+// act on themselves. This is a SOFT gate (the app runs in a browser), backed by
+// unique-name claiming so a second device can't pose as an admin.
+//
+// The admin NAMES + ranks come from the ADMIN_NAMES secret (format
+// "name:rank,name:rank"), so the identities live ONLY on the server — never in
+// the client bundle or the repo. Set with: wrangler secret put ADMIN_NAMES.
+// Apostrophe variants in a name are normalized so ' ׳ ’ ′ all match.
 function normName(s) { return String(s || '').trim().replace(/[׳’′ʼ]/g, "'"); }
-function adminRank(name) { return ADMIN_RANKS[normName(name)] || 0; }
+let ADMIN_CACHE = null, ADMIN_CACHE_SRC = null;
+function adminRanks(env) {
+  const src = (env && env.ADMIN_NAMES) || '';
+  if (ADMIN_CACHE && ADMIN_CACHE_SRC === src) return ADMIN_CACHE;
+  const map = {};
+  for (const part of src.split(',')) {
+    const i = part.lastIndexOf(':');
+    if (i < 0) continue;
+    const name = normName(part.slice(0, i));
+    const rank = parseInt(part.slice(i + 1), 10);
+    if (name && rank > 0) map[name] = rank;
+  }
+  ADMIN_CACHE = map; ADMIN_CACHE_SRC = src;
+  return map;
+}
+function adminRank(env, name) { return adminRanks(env)[normName(name)] || 0; }
 // A claimed name whose device hasn't checked in for this long is considered
 // abandoned and may be taken over by another device (prevents permanent lockout).
 const CLAIM_STALE_MS = 12 * 60 * 60 * 1000;   // 12 hours
@@ -121,7 +139,7 @@ const CLAIM_STALE_MS = 12 * 60 * 60 * 1000;   // 12 hours
 // device (or the previous holder went stale). Authorizes reset/restore/manage.
 async function isAdminReq(env, countId, by, deviceId) {
   by = normName(by);
-  if (adminRank(by) < 1 || !deviceId) return false;
+  if (adminRank(env, by) < 1 || !deviceId) return false;
   const row = await env.DB.prepare(
     `SELECT device_id, last_seen FROM stations WHERE count_id = ?1 AND name = ?2`
   ).bind(countId, by).first();
@@ -374,7 +392,7 @@ export default {
         const deviceId = String(body.device_id || '').trim().slice(0, MAX_ID_LEN);
         if (!countId || !name || !deviceId) return json({ error: 'count_id, name, device_id required' }, 400);
         const now = Date.now();
-        const rank = adminRank(name);
+        const rank = adminRank(env, name);
         const existing = await env.DB.prepare(
           `SELECT device_id, last_seen, blocked FROM stations WHERE count_id = ?1 AND name = ?2`
         ).bind(countId, name).first();
@@ -418,7 +436,7 @@ export default {
           byName[s.name] = {
             name: s.name, blocked: !!s.blocked, last_seen: s.last_seen || 0,
             online: !!(s.last_seen && now - s.last_seen < 90000),
-            rank: adminRank(s.name), scans: scanBy[s.name] || 0,
+            rank: adminRank(env, s.name), scans: scanBy[s.name] || 0,
             is_you: s.device_id === deviceId, registered: true
           };
         }
@@ -426,16 +444,16 @@ export default {
         for (const dev of Object.keys(scanBy)) {
           if (!byName[dev]) byName[dev] = {
             name: dev, blocked: false, last_seen: 0, online: false,
-            rank: adminRank(dev), scans: scanBy[dev], is_you: false, registered: false
+            rank: adminRank(env, dev), scans: scanBy[dev], is_you: false, registered: false
           };
         }
         const stations = Object.values(byName).sort((a, b) =>
           (b.rank - a.rank) || String(a.name).localeCompare(String(b.name), 'he'));
-        return json({ ok: true, stations, actor_rank: adminRank(by) });
+        return json({ ok: true, stations, actor_rank: adminRank(env, by) });
       }
 
       // Admin: block / unblock / delete / rename a user. The actor must strictly
-      // outrank the target (so מרים can't touch מנג'ר, and no self-actions).
+      // outrank the target (so a lower admin can't touch a higher one; no self-actions).
       if (path === '/api/stations' && req.method === 'POST') {
         const body = await req.json();
         const countId = (body.count_id || '').trim();
@@ -445,7 +463,7 @@ export default {
         const target = normName(body.name).slice(0, MAX_ID_LEN);
         if (!countId || !action || !target) return json({ error: 'count_id, action, name required' }, 400);
         if (!(await isAdminReq(env, countId, by, deviceId))) return json({ error: 'forbidden', forbidden: true }, 403);
-        if (adminRank(by) <= adminRank(target)) return json({ error: 'אין לך הרשאה על המשתמש הזה', forbidden: true }, 403);
+        if (adminRank(env, by) <= adminRank(env, target)) return json({ error: 'אין לך הרשאה על המשתמש הזה', forbidden: true }, 403);
         const now = Date.now();
         if (action === 'block' || action === 'unblock') {
           const blocked = action === 'block' ? 1 : 0;
@@ -464,7 +482,7 @@ export default {
         if (action === 'rename') {
           const newName = normName(body.new_name).slice(0, MAX_ID_LEN);
           if (!newName) return json({ error: 'new_name required' }, 400);
-          if (adminRank(newName) >= adminRank(by)) return json({ error: 'אי אפשר לשנות לשם של מנהל', forbidden: true }, 403);
+          if (adminRank(env, newName) >= adminRank(env, by)) return json({ error: 'אי אפשר לשנות לשם של מנהל', forbidden: true }, 403);
           const clash = await env.DB.prepare(`SELECT name FROM stations WHERE count_id = ?1 AND name = ?2`).bind(countId, newName).first();
           if (clash) return json({ error: 'השם החדש כבר תפוס', taken: true }, 409);
           await env.DB.prepare(`UPDATE stations SET name = ?3 WHERE count_id = ?1 AND name = ?2`).bind(countId, target, newName).run();
