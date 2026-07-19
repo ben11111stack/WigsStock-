@@ -557,6 +557,32 @@ td .ic { width: 15px; height: 15px; }
 .rh-actions { flex: none; display: flex; align-items: center; gap: 6px; }
 .rh-actions .btn { margin: 0; }
 
+/* user management (settings, admin-only) */
+.u-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.u-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.u-info { flex: 1 1 auto; min-width: 0; }
+.u-main { font-size: 14px; color: var(--ink); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.u-sub { margin-top: 3px; }
+.u-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); flex: none; opacity: .5; }
+.u-dot.on { background: var(--ok); opacity: 1; }
+.u-role { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+  background: color-mix(in oklab, var(--primary) 14%, var(--bg)); color: var(--primary); }
+.u-role.super { background: color-mix(in oklab, var(--warn) 18%, var(--bg)); color: color-mix(in oklab, var(--warn) 72%, var(--ink)); }
+.u-you { font-size: 11px; color: var(--ink-3); }
+.u-blocked { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+  background: color-mix(in oklab, var(--bad) 12%, var(--bg)); color: var(--bad); }
+.u-actions { flex: none; display: flex; align-items: center; gap: 4px; }
+
+/* styled prompt input (inside .ui-dialog) */
+.dlg-input { width: 100%; margin-top: 4px; font-size: 15px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; color: var(--ink); }
+.dlg-input:focus { outline: none; border-color: var(--primary); }
+
+/* blocked-station gate + chip */
+.gate-ic.bad { color: var(--bad); }
+#stationChip.blocked { color: var(--bad); border-color: color-mix(in oklab, var(--bad) 40%, var(--line)); }
+
 /* ---------- In-app dialog (replaces native alert/confirm) ---------- */
 .ui-dialog { align-items: center; padding: 22px; z-index: 90; }
 .ui-dialog .dlg-card { width: 100%; max-width: 360px; border: 1px solid var(--line);

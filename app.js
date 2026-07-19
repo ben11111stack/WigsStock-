@@ -54,8 +54,14 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.15.0';
+const APP_VERSION = '1.16.0';
 const CHANGELOG = [
+  { v: '1.16.0', notes: [
+    'הרשאות: רק "מרים" ו-"מנג\'ר" (מנהל־על) רואות את ההגדרות הרגישות ויכולות לאפס/לשחזר. לשאר העמדות מוצגות רק הגדרות בסיסיות (מראה, התנהגות, עמדה, גרסה)',
+    'ניהול משתמשים למנהלות: צפייה בכל העמדות, חסימה, שינוי שם ומחיקה. מרים אינה יכולה לחסום/למחוק את מנג\'ר',
+    'שמות עמדה ייחודיים: אי אפשר לפתוח שתי עמדות באותו שם — הראשונה תופסת אותו',
+    'עמדה חסומה אינה יכולה לסרוק, וכל האיפוסים/השחזורים מאובטחים גם בשרת'
+  ] },
   { v: '1.15.0', notes: [
     'איפוס הסריקות עבר ממסך הסריקה להגדרות → "איפוס ושחזור", עם אזהרה ואישור לפני מחיקה',
     'לפני כל איפוס נשמר גיבוי אוטומטי בשרת (מי איפס, מתי וכמה נסרק) — כל עמדה יכולה לשחזר ממנו את כל הסריקות בכל רגע, גם אם המכשיר שאיפס לא זמין'
@@ -199,6 +205,22 @@ const TABS = [
 ];
 function defaultTab() { return TABS.some(t => t.id === state.defaultTab) ? state.defaultTab : 'scan'; }
 
+/* ---------- Access control (admins) ----------
+ * Two admin names by rank: "מנג'ר" (super-admin) outranks "מרים". Both can reset,
+ * restore, manage users, and see the sensitive settings; everyone else sees only
+ * the basic ones and can't reset. A management action needs the actor to strictly
+ * outrank the target, so מרים can't block/remove מנג'ר. Names are matched with
+ * apostrophe variants normalized (' ׳ ’ ′). Mirrors the Worker's rules — the
+ * server is the real gate; this just shapes the UI. */
+const ADMIN_RANKS = { "מנג'ר": 2, 'מרים': 1 };
+function normName(s) { return String(s || '').trim().replace(/[׳’′ʼ]/g, "'"); }
+function adminRank(name) { return ADMIN_RANKS[normName(name)] || 0; }
+function isAdmin() { return adminRank(state.session) >= 1; }
+
+// Live claim state for this station (from /api/claim-name): are we the owner of
+// our name, and has the admin blocked us?
+let stationClaim = { owner: true, blocked: false, taken: false };
+
 /* ---------- Per-wig helpers ----------
  * Effective status = a card override if one was set, else the sheet's value.
  * Effective name = an in-app edit, else the sheet's name column, else empty. */
@@ -287,27 +309,31 @@ function uiDialog(opts) {
     const wrap = document.createElement('div');
     wrap.className = 'modal ui-dialog';
     const hasCancel = opts.cancelText !== null && opts.cancelText !== undefined;
+    const isPrompt = !!opts.prompt;
     wrap.innerHTML =
       `<div class="modal-card dlg-card" role="alertdialog" aria-modal="true">` +
         (opts.title ? `<div class="dlg-title">${esc(opts.title)}</div>` : '') +
         `<div class="dlg-msg">${esc(opts.message || '').replace(/\n/g, '<br>')}</div>` +
+        (isPrompt ? `<input class="dlg-input" type="text" autocomplete="off" value="${esc(opts.value || '')}" maxlength="${opts.maxlength || 24}">` : '') +
         `<div class="dlg-actions">` +
           (hasCancel ? `<button type="button" class="btn ghost dlg-cancel">${esc(opts.cancelText || 'ביטול')}</button>` : '') +
           `<button type="button" class="btn${opts.danger ? ' danger' : ''} dlg-ok">${esc(opts.confirmText || 'אישור')}</button>` +
         `</div>` +
       `</div>`;
     document.body.appendChild(wrap);
+    const input = wrap.querySelector('.dlg-input');
+    const okVal = () => (isPrompt ? (input ? input.value : '') : true);
     const finish = (val) => { document.removeEventListener('keydown', onKey, true); wrap.remove(); resolve(val); };
     const onKey = (e) => {
-      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
-      else if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      if (e.key === 'Escape') { e.preventDefault(); finish(isPrompt ? null : false); }
+      else if (e.key === 'Enter') { e.preventDefault(); finish(okVal()); }
     };
-    wrap.querySelector('.dlg-ok').addEventListener('click', () => finish(true));
+    wrap.querySelector('.dlg-ok').addEventListener('click', () => finish(okVal()));
     const cancelBtn = wrap.querySelector('.dlg-cancel');
-    if (cancelBtn) cancelBtn.addEventListener('click', () => finish(false));
-    wrap.addEventListener('click', (e) => { if (e.target === wrap) finish(false); });
+    if (cancelBtn) cancelBtn.addEventListener('click', () => finish(isPrompt ? null : false));
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) finish(isPrompt ? null : false); });
     document.addEventListener('keydown', onKey, true);
-    setTimeout(() => { const b = wrap.querySelector('.dlg-ok'); if (b) b.focus(); }, 20);
+    setTimeout(() => { const b = input || wrap.querySelector('.dlg-ok'); if (b) { b.focus(); if (input) input.select(); } }, 20);
   });
 }
 function uiAlert(message, opts) {
@@ -317,6 +343,13 @@ function uiAlert(message, opts) {
 function uiConfirm(message, opts) {
   opts = opts || {};
   return uiDialog({ title: opts.title, message, confirmText: opts.confirmText || 'אישור', cancelText: opts.cancelText || 'ביטול', danger: opts.danger });
+}
+// Styled text prompt (never the native prompt()). Resolves to the string, or
+// null if cancelled/dismissed.
+function uiPrompt(message, opts) {
+  opts = opts || {};
+  return uiDialog({ prompt: true, title: opts.title, message, value: opts.value || '',
+    maxlength: opts.maxlength, confirmText: opts.confirmText || 'אישור', cancelText: opts.cancelText || 'ביטול' });
 }
 
 /* Normalize a barcode for matching. The sheet import and every scan pass through
@@ -517,6 +550,7 @@ function recordScan(rawCode, opts) {
   const code = normBarcode(rawCode);
   if (!code) return;
   if (!hasStation()) { applyStationGate(); return; }   // never record without a station
+  if (stationClaim.blocked) { applyBlockGate(); return; }   // blocked by the admin
 
   // Debounce: ignore the same code fired twice within 1.2s (camera repeats).
   const now = Date.now();
@@ -1807,6 +1841,8 @@ async function pullCloud() {
     save();
     renderReport(); renderScanStats(); renderPending();
     setCloudStatus('ok', data);
+    // heartbeat our name claim + refresh block state (throttled inside claimName)
+    if (hasStation()) claimName(false);
     // adopt shared settings (look + per-wig data) set on any station
     applyRemoteSettings(data.settings, data.settings_at || 0);
     // adopt the shared inventory source set by the manager (loads it on every station)
@@ -1983,7 +2019,7 @@ function showTab(name) {
   if (name !== 'report') closeLookupScan();           // free the lookup camera when leaving the report
   if (name === 'report') { renderReport(); if (cloudEnabled()) pullCloud(); }   // refresh across stations
   if (name === 'export') renderExportPreview();
-  if (name === 'settings') renderResetHistory();      // refresh restore points from the server
+  if (name === 'settings') { applyAdminGate(); renderResetHistory(); renderUsers(); }   // admin-only sections
   if (name === 'scan') {
     // require a station name first; start camera within the tap so iOS allows it
     if (applyStationGate()) { setTimeout(() => $('#stationGateInput').focus(), 60); }
@@ -2008,21 +2044,25 @@ function init() {
   // paint all static [data-ic] placeholders from the one icon set
   $$('[data-ic]').forEach(el => { el.innerHTML = ic(el.getAttribute('data-ic')); });
 
-  // session / station name (now lives in Settings; mandatory before scanning)
+  // session / station name (now lives in Settings; mandatory before scanning).
+  // Typing updates locally; committing (blur) claims the unique name on the
+  // server and reacts to taken/blocked.
   const sess = $('#sessionName');
   sess.value = state.session || '';
   sess.addEventListener('input', () => { state.session = sess.value; save(); setCloudStatus(); updateStationChip(); });
+  sess.addEventListener('change', () => onNameCommitted(sess.value, sess));
   updateStationChip();
   $('#stationChip').addEventListener('click', () => navigate('settings'));
 
   // mandatory-station gate on the scan tab
-  $('#stationGateSave').addEventListener('click', () => {
+  $('#stationGateSave').addEventListener('click', async () => {
     const v = $('#stationGateInput').value.trim();
     if (!v) { $('#stationGateInput').focus(); return; }
-    state.session = v; sess.value = v; save();
-    updateStationChip(); setCloudStatus();
+    await onNameCommitted(v, sess);
+    if (!hasStation()) { $('#stationGateInput').value = ''; $('#stationGateInput').focus(); return; }  // name was taken → stay on gate
+    $('#stationGateInput').value = state.session;
     applyStationGate();
-    ensureCamera();
+    if (!stationClaim.blocked) ensureCamera();
   });
 
   // stable device id fallback (used if no station name is typed)
@@ -2245,6 +2285,11 @@ function init() {
   renderPending();
   renderSessionLog();
 
+  // access control: show sensitive settings only to admins; claim our name on
+  // the server (uniqueness + block state) and heartbeat from there on.
+  applyAdminGate();
+  if (cloudEnabled() && hasStation()) claimName(true).then(() => renderUsers());
+
   // landing view — the tab chosen in Settings (default: scan); seed history so back walks tabs
   const start = defaultTab();
   history.replaceState({ tab: start }, '');
@@ -2429,7 +2474,7 @@ async function doResetScans() {
   try {
     const rr = await fetch(cloudBase() + '/api/reset', {
       method: 'POST', headers: cloudHeaders(),
-      body: JSON.stringify({ count_id: state.countId, by: resetByName() })
+      body: JSON.stringify({ count_id: state.countId, by: normName(state.session), device_id: state.deviceId })
     });
     const rj = await rr.json().catch(() => ({}));
     if (!rr.ok) throw new Error(rj.error || ('השרת ענה ' + rr.status));
@@ -2464,7 +2509,7 @@ async function restoreReset(backup) {
   try {
     const rr = await fetch(cloudBase() + '/api/restore', {
       method: 'POST', headers: cloudHeaders(),
-      body: JSON.stringify({ count_id: state.countId, backup_id: backup.id })
+      body: JSON.stringify({ count_id: state.countId, backup_id: backup.id, by: normName(state.session), device_id: state.deviceId })
     });
     const rj = await rr.json().catch(() => ({}));
     if (!rr.ok) throw new Error(rj.error || ('השרת ענה ' + rr.status));
@@ -2520,6 +2565,140 @@ async function renderResetHistory() {
     const rb = row.querySelector('.rh-restore');
     if (rb) rb.addEventListener('click', () => restoreReset(b));
   });
+}
+
+/* ---------- Station name claim + block + user management ----------
+ * Every station registers its name with the server (unique per count). The call
+ * doubles as a heartbeat (keeps the claim fresh) and tells us if the admin has
+ * blocked us. Admins additionally get the user-management UI below. */
+let lastClaimAt = 0;
+async function claimName(force) {
+  if (!cloudEnabled() || !hasStation()) return null;
+  const now = Date.now();
+  if (!force && now - lastClaimAt < 45000) return stationClaim;   // heartbeat throttle
+  lastClaimAt = now;
+  try {
+    const r = await fetch(cloudBase() + '/api/claim-name', {
+      method: 'POST', headers: cloudHeaders(),
+      body: JSON.stringify({ count_id: state.countId, name: normName(state.session), device_id: state.deviceId })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 409 || j.taken) stationClaim = { owner: false, blocked: false, taken: true };
+    else stationClaim = { owner: !!j.owner, blocked: !!j.blocked, taken: false };
+  } catch (e) { /* keep last known claim state on a network blip */ }
+  applyBlockGate();
+  return stationClaim;
+}
+
+// Blocked station: cover the scan tab with a lock message and stop the camera.
+function applyBlockGate() {
+  const gate = $('#blockGate');
+  const scanner = document.querySelector('#panel-scan .scanner');
+  const blocked = !!stationClaim.blocked;
+  if (gate) gate.classList.toggle('hidden', !blocked);
+  if (blocked) {
+    if (scanner) scanner.classList.add('hidden');
+    stopCamera();
+  } else if (scanner && hasStation()) {
+    scanner.classList.remove('hidden');
+  }
+  const chip = $('#stationChip');
+  if (chip) chip.classList.toggle('blocked', blocked);
+}
+
+// Show/hide the sensitive settings: only admins (מרים / מנג'ר) see them.
+function applyAdminGate() {
+  const admin = isAdmin();
+  document.querySelectorAll('[data-admin-only]').forEach(el => el.classList.toggle('hidden', !admin));
+}
+
+// When the station name is committed (blur / gate save): normalize, claim it,
+// and react to "taken" / "blocked". Reverts a taken name so no two stations
+// share one, and refreshes the admin gate + user list.
+async function onNameCommitted(raw, el) {
+  const name = normName(raw);
+  state.session = name; if (el) el.value = name; save();
+  updateStationChip(); setCloudStatus(); applyAdminGate();
+  if (!name || !cloudEnabled()) { applyBlockGate(); return; }
+  const c = await claimName(true);
+  if (c && c.taken) {
+    await uiAlert('השם "' + name + '" כבר בשימוש בעמדה אחרת. בחרי שם אחר.', { danger: true, title: 'שם תפוס' });
+    state.session = ''; if (el) el.value = '';
+    const sess = $('#sessionName'); if (sess) sess.value = '';
+    save(); updateStationChip(); setCloudStatus(); applyAdminGate(); applyStationGate();
+    stationClaim = { owner: false, blocked: false, taken: true };
+    return;
+  }
+  applyAdminGate();
+  renderUsers();
+  if (c && c.blocked) uiAlert('העמדה הזו נחסמה על ידי המנהלת. לא ניתן לסרוק.', { danger: true, title: 'עמדה חסומה' });
+}
+
+// Admin: list all stations/users with block / rename / delete controls.
+async function renderUsers() {
+  const el = $('#usersManager');
+  if (!el) return;
+  if (!isAdmin() || !cloudEnabled()) { el.innerHTML = ''; return; }
+  el.innerHTML = '<p class="muted small" style="margin:0">טוען משתמשים…</p>';
+  let data;
+  try {
+    const r = await fetchT(cloudBase() + '/api/stations?count_id=' + encodeURIComponent(state.countId) +
+      '&by=' + encodeURIComponent(normName(state.session)) + '&device_id=' + encodeURIComponent(state.deviceId));
+    data = await r.json();
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+  } catch (e) {
+    el.innerHTML = '<p class="small" style="margin:0;color:var(--bad)">לא הצלחתי לטעון משתמשים: ' + esc(e.message) + '</p>';
+    return;
+  }
+  const myRank = data.actor_rank || adminRank(state.session);
+  const list = data.stations || [];
+  const rows = list.map((s, i) => {
+    const canManage = myRank > s.rank;
+    const role = s.rank >= 2 ? '<span class="u-role super">מנהל־על</span>'
+               : s.rank >= 1 ? '<span class="u-role admin">מנהלת</span>' : '';
+    const actions = canManage ? `
+        <button class="icon-btn u-block" title="${s.blocked ? 'בטל חסימה' : 'חסום'}">${ic(s.blocked ? 'check' : 'alert')}</button>
+        <button class="icon-btn u-rename" title="שנה שם">${ic('edit')}</button>
+        <button class="icon-btn danger u-del" title="מחק">${ic('trash')}</button>`
+      : '<span class="muted small">—</span>';
+    return `<div class="u-row" data-u-i="${i}">
+      <div class="u-info">
+        <div class="u-main"><span class="u-dot${s.online ? ' on' : ''}"></span><b>${esc(s.name)}</b>${role}${s.is_you ? ' <span class="u-you">(את/ה)</span>' : ''}${s.blocked ? ' <span class="u-blocked">חסום</span>' : ''}</div>
+        <div class="u-sub muted small">${(s.scans || 0).toLocaleString()} סריקות</div>
+      </div>
+      <div class="u-actions">${actions}</div>
+    </div>`;
+  }).join('');
+  el.innerHTML =
+    `<p class="muted small">כל העמדות בספירה. חסימה מונעת סריקה. ${myRank >= 2 ? '' : 'אינך יכולה לנהל מנהלים בדרגה שווה או גבוהה.'}</p>` +
+    `<div class="u-list">${rows || '<p class="muted small">אין עדיין עמדות.</p>'}</div>`;
+
+  el.querySelectorAll('.u-row').forEach(row => {
+    const s = list[+row.getAttribute('data-u-i')];
+    const bl = row.querySelector('.u-block'), rn = row.querySelector('.u-rename'), dl = row.querySelector('.u-del');
+    if (bl) bl.addEventListener('click', () => userAction(s.blocked ? 'unblock' : 'block', s.name));
+    if (rn) rn.addEventListener('click', async () => {
+      const nn = await uiPrompt('שם חדש עבור "' + s.name + '":', { title: 'שינוי שם', value: s.name, confirmText: 'שמור' });
+      if (nn && normName(nn) && normName(nn) !== s.name) userAction('rename', s.name, normName(nn));
+    });
+    if (dl) dl.addEventListener('click', async () => {
+      if (await uiConfirm('למחוק את "' + s.name + '"? הרישום יוסר והשם יתפנה לשימוש מחדש. (הסריקות שלו נשארות בספירה.)', { danger: true, title: 'מחיקת משתמש', confirmText: 'מחק' }))
+        userAction('delete', s.name);
+    });
+  });
+}
+
+async function userAction(action, name, newName) {
+  try {
+    const r = await fetch(cloudBase() + '/api/stations', {
+      method: 'POST', headers: cloudHeaders(),
+      body: JSON.stringify({ count_id: state.countId, by: normName(state.session), device_id: state.deviceId, action, name, new_name: newName })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || ('השרת ענה ' + r.status));
+    renderUsers();
+    if (cloudEnabled()) pullCloud();
+  } catch (e) { uiAlert('הפעולה נכשלה: ' + e.message, { danger: true, title: 'ניהול משתמשים' }); }
 }
 
 function renderTheme() {

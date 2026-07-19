@@ -83,6 +83,16 @@ async function ensureSchema(env) {
        by_who TEXT, total_scanned INTEGER, total_count INTEGER, data TEXT NOT NULL)`
   ).run();
   try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_backups_count ON backups(count_id, created_at)`).run(); } catch (e) { /* exists */ }
+  // Station registry: one row per station NAME per count. Enforces unique names
+  // (first device to claim a name owns it) and lets the admin (מרים) see, rename,
+  // delete and block users. `device_id` is the claimer's stable id; `last_seen`
+  // is a heartbeat so an abandoned name can be reclaimed after it goes stale.
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS stations (
+       count_id TEXT NOT NULL, name TEXT NOT NULL, device_id TEXT,
+       last_seen INTEGER, blocked INTEGER NOT NULL DEFAULT 0, created_at INTEGER,
+       PRIMARY KEY (count_id, name))`
+  ).run();
   schemaReady = true;
 }
 
@@ -90,6 +100,37 @@ async function ensureSchema(env) {
 const MAX_BACKUP_BLOB = 4000000;
 // Keep at most this many backups per count (prune the oldest beyond it).
 const MAX_BACKUPS_PER_COUNT = 50;
+
+// ---- Access control -------------------------------------------------------
+// Two admin names, by rank. "מנג'ר" (manager) is the super-admin; "מרים" is an
+// admin. BOTH can reset, restore, and manage users, and both see the sensitive
+// settings. A user-management action (block/delete/rename) needs the actor to
+// STRICTLY outrank the target — so מרים can't touch מנג'ר, neither admin can act
+// on an equal, and nobody can act on themselves. This is a SOFT gate (the app
+// runs in a browser), backed by unique-name claiming so a second device can't
+// pose as an admin. Apostrophe variants in מנג'ר are normalized so ' ׳ ’ ′ match.
+const ADMIN_RANKS = { "מנג'ר": 2, 'מרים': 1 };
+function normName(s) { return String(s || '').trim().replace(/[׳’′ʼ]/g, "'"); }
+function adminRank(name) { return ADMIN_RANKS[normName(name)] || 0; }
+// A claimed name whose device hasn't checked in for this long is considered
+// abandoned and may be taken over by another device (prevents permanent lockout).
+const CLAIM_STALE_MS = 12 * 60 * 60 * 1000;   // 12 hours
+
+// Is this request from the ACTIVE holder of an admin name? True only when `by`
+// is an admin name AND that name's claim currently belongs to the caller's
+// device (or the previous holder went stale). Authorizes reset/restore/manage.
+async function isAdminReq(env, countId, by, deviceId) {
+  by = normName(by);
+  if (adminRank(by) < 1 || !deviceId) return false;
+  const row = await env.DB.prepare(
+    `SELECT device_id, last_seen FROM stations WHERE count_id = ?1 AND name = ?2`
+  ).bind(countId, by).first();
+  if (!row) return false;                                  // this admin hasn't claimed her name yet
+  if (row.device_id === deviceId) return true;             // the active admin device
+  const now = Date.now();
+  if (row.last_seen && now - row.last_seen > CLAIM_STALE_MS) return true;  // stale → allow takeover
+  return false;
+}
 
 // Aggregate a count's scans per barcode: total, last time, and stations.
 async function aggregateScans(env, countId) {
@@ -157,6 +198,10 @@ export default {
         if (!countId || !device) return json({ error: 'count_id and device required' }, 400);
         if (countId.length > MAX_ID_LEN || device.length > MAX_ID_LEN) return json({ error: 'count_id/device too long' }, 400);
 
+        // Reject scans from a station the admin has blocked.
+        const st = await env.DB.prepare(`SELECT blocked FROM stations WHERE count_id = ?1 AND name = ?2`).bind(countId, device).first();
+        if (st && st.blocked) return json({ error: 'blocked', blocked: true }, 403);
+
         const now = Date.now();
         const entries = Object.entries(scans)
           .filter(([bc]) => bc && String(bc).length <= MAX_BARCODE_LEN)
@@ -219,6 +264,9 @@ export default {
         const countId = (body.count_id || '').trim();
         if (!countId) return json({ error: 'count_id required' }, 400);
         const by = String(body.by || '').trim().slice(0, MAX_ID_LEN);
+        // Only the admin may reset.
+        if (!(await isAdminReq(env, countId, by, String(body.device_id || '').trim())))
+          return json({ error: 'רק המנהלת יכולה לאפס', forbidden: true }, 403);
         const now = Date.now();
 
         // snapshot the current merged totals (skip if the count is already empty)
@@ -278,6 +326,9 @@ export default {
         const countId = (body.count_id || '').trim();
         const backupId = String(body.backup_id || '').trim();
         if (!countId || !backupId) return json({ error: 'count_id and backup_id required' }, 400);
+        // Only the admin may restore.
+        if (!(await isAdminReq(env, countId, String(body.by || '').trim(), String(body.device_id || '').trim())))
+          return json({ error: 'רק המנהלת יכולה לשחזר', forbidden: true }, 403);
         const row = await env.DB.prepare(
           `SELECT data FROM backups WHERE id = ?1 AND count_id = ?2`
         ).bind(backupId, countId).first();
@@ -310,6 +361,118 @@ export default {
         ).bind(countId, now, now).run();
         if (restored > 0 && ctx && ctx.waitUntil) ctx.waitUntil(maybeWriteback(env, countId));
         return json({ ok: true, restored, reset_at: now });
+      }
+
+      // Claim/refresh a station name. Enforces unique names: the first device to
+      // claim a name owns it; another device can only take it over once the
+      // holder goes stale. Also returns whether the name is admin / blocked.
+      // The app calls this when the name is set and periodically as a heartbeat.
+      if (path === '/api/claim-name' && req.method === 'POST') {
+        const body = await req.json();
+        const countId = (body.count_id || '').trim();
+        const name = normName(body.name).slice(0, MAX_ID_LEN);
+        const deviceId = String(body.device_id || '').trim().slice(0, MAX_ID_LEN);
+        if (!countId || !name || !deviceId) return json({ error: 'count_id, name, device_id required' }, 400);
+        const now = Date.now();
+        const rank = adminRank(name);
+        const existing = await env.DB.prepare(
+          `SELECT device_id, last_seen, blocked FROM stations WHERE count_id = ?1 AND name = ?2`
+        ).bind(countId, name).first();
+        if (!existing) {
+          await env.DB.prepare(
+            `INSERT INTO stations (count_id, name, device_id, last_seen, blocked, created_at) VALUES (?1, ?2, ?3, ?4, 0, ?4)`
+          ).bind(countId, name, deviceId, now).run();
+          return json({ ok: true, owner: true, blocked: false, admin: rank >= 1, rank });
+        }
+        if (existing.device_id === deviceId) {
+          await env.DB.prepare(`UPDATE stations SET last_seen = ?3 WHERE count_id = ?1 AND name = ?2`).bind(countId, name, now).run();
+          return json({ ok: true, owner: true, blocked: !!existing.blocked, admin: rank >= 1, rank });
+        }
+        if (existing.last_seen && now - existing.last_seen > CLAIM_STALE_MS) {   // stale → takeover
+          await env.DB.prepare(`UPDATE stations SET device_id = ?3, last_seen = ?4 WHERE count_id = ?1 AND name = ?2`).bind(countId, name, deviceId, now).run();
+          return json({ ok: true, owner: true, blocked: !!existing.blocked, admin: rank >= 1, rank, took_over: true });
+        }
+        return json({ ok: false, taken: true, owner: false }, 409);   // name in use by an active device
+      }
+
+      // Admin: list every station/user in the count (names, block state, online,
+      // scan counts). Merges the station registry with any names that appear only
+      // in scans. Admin-only.
+      if (path === '/api/stations' && req.method === 'GET') {
+        const countId = (url.searchParams.get('count_id') || '').trim();
+        const by = url.searchParams.get('by') || '';
+        const deviceId = url.searchParams.get('device_id') || '';
+        if (!countId) return json({ error: 'count_id required' }, 400);
+        if (!(await isAdminReq(env, countId, by, deviceId))) return json({ error: 'forbidden', forbidden: true }, 403);
+        const now = Date.now();
+        const reg = await env.DB.prepare(
+          `SELECT name, device_id, last_seen, blocked, created_at FROM stations WHERE count_id = ?1`
+        ).bind(countId).all();
+        const scanRows = await env.DB.prepare(
+          `SELECT device, SUM(count) AS total FROM scans WHERE count_id = ?1 GROUP BY device`
+        ).bind(countId).all();
+        const scanBy = {};
+        for (const r of (scanRows.results || [])) scanBy[r.device] = r.total || 0;
+        const byName = {};
+        for (const s of (reg.results || [])) {
+          byName[s.name] = {
+            name: s.name, blocked: !!s.blocked, last_seen: s.last_seen || 0,
+            online: !!(s.last_seen && now - s.last_seen < 90000),
+            rank: adminRank(s.name), scans: scanBy[s.name] || 0,
+            is_you: s.device_id === deviceId, registered: true
+          };
+        }
+        // include names that scanned but were never registered (pre-feature data)
+        for (const dev of Object.keys(scanBy)) {
+          if (!byName[dev]) byName[dev] = {
+            name: dev, blocked: false, last_seen: 0, online: false,
+            rank: adminRank(dev), scans: scanBy[dev], is_you: false, registered: false
+          };
+        }
+        const stations = Object.values(byName).sort((a, b) =>
+          (b.rank - a.rank) || String(a.name).localeCompare(String(b.name), 'he'));
+        return json({ ok: true, stations, actor_rank: adminRank(by) });
+      }
+
+      // Admin: block / unblock / delete / rename a user. The actor must strictly
+      // outrank the target (so מרים can't touch מנג'ר, and no self-actions).
+      if (path === '/api/stations' && req.method === 'POST') {
+        const body = await req.json();
+        const countId = (body.count_id || '').trim();
+        const by = normName(body.by);
+        const deviceId = String(body.device_id || '').trim();
+        const action = (body.action || '').trim();
+        const target = normName(body.name).slice(0, MAX_ID_LEN);
+        if (!countId || !action || !target) return json({ error: 'count_id, action, name required' }, 400);
+        if (!(await isAdminReq(env, countId, by, deviceId))) return json({ error: 'forbidden', forbidden: true }, 403);
+        if (adminRank(by) <= adminRank(target)) return json({ error: 'אין לך הרשאה על המשתמש הזה', forbidden: true }, 403);
+        const now = Date.now();
+        if (action === 'block' || action === 'unblock') {
+          const blocked = action === 'block' ? 1 : 0;
+          // upsert so blocking a scan-only (unregistered) user also works
+          await env.DB.prepare(
+            `INSERT INTO stations (count_id, name, device_id, last_seen, blocked, created_at)
+             VALUES (?1, ?2, NULL, ?3, ?4, ?3)
+             ON CONFLICT(count_id, name) DO UPDATE SET blocked = ?4`
+          ).bind(countId, target, now, blocked).run();
+          return json({ ok: true, blocked: !!blocked });
+        }
+        if (action === 'delete') {
+          await env.DB.prepare(`DELETE FROM stations WHERE count_id = ?1 AND name = ?2`).bind(countId, target).run();
+          return json({ ok: true });
+        }
+        if (action === 'rename') {
+          const newName = normName(body.new_name).slice(0, MAX_ID_LEN);
+          if (!newName) return json({ error: 'new_name required' }, 400);
+          if (adminRank(newName) >= adminRank(by)) return json({ error: 'אי אפשר לשנות לשם של מנהל', forbidden: true }, 403);
+          const clash = await env.DB.prepare(`SELECT name FROM stations WHERE count_id = ?1 AND name = ?2`).bind(countId, newName).first();
+          if (clash) return json({ error: 'השם החדש כבר תפוס', taken: true }, 409);
+          await env.DB.prepare(`UPDATE stations SET name = ?3 WHERE count_id = ?1 AND name = ?2`).bind(countId, target, newName).run();
+          // move their scans onto the new name so attribution follows (best-effort)
+          try { await env.DB.prepare(`UPDATE scans SET device = ?3 WHERE count_id = ?1 AND device = ?2`).bind(countId, target, newName).run(); } catch (e) { /* barcode clash — leave old label */ }
+          return json({ ok: true });
+        }
+        return json({ error: 'unknown action' }, 400);
       }
 
       // Register the shared inventory source (Google Sheet link) for a count,
