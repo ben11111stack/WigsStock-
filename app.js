@@ -54,11 +54,14 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.16.2';
+const APP_VERSION = '1.16.3';
 // NOTE: this changelog is visible to EVERY station (Settings → גרסאות). Keep the
 // notes generic — never describe the permissions / manager / block / user-
 // management system here, or regular stations learn it exists.
 const CHANGELOG = [
+  { v: '1.16.3', notes: [
+    'שיפורים ותיקונים כלליים'
+  ] },
   { v: '1.16.2', notes: [
     'שיפורים ותיקונים כלליים'
   ] },
@@ -2640,7 +2643,7 @@ async function onNameCommitted(raw, el) {
   }
   applyAdminGate();
   renderUsers();
-  if (c && c.blocked) uiAlert('לא ניתן לסרוק מהעמדה הזו כרגע. נסי שוב מאוחר יותר.', { title: 'העמדה אינה זמינה' });
+  if (c && c.blocked) uiAlert('לא ניתן לסרוק מהעמדה הזו כרגע. פני למפתח.', { title: 'העמדה אינה זמינה' });
 }
 
 // Admin: list all stations/users with block / rename / delete controls.
