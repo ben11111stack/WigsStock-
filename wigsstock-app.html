@@ -1070,7 +1070,7 @@ td .ic { width: 15px; height: 15px; }
           </div>
           <button class="btn danger" id="resetScansSettings"><span data-ic="reset"></span> אפס את כל הסריקות</button>
           <div class="fld-lbl" style="margin-top:22px">היסטוריית גיבויים לשחזור</div>
-          <div class="hint" style="margin:0 0 8px">כל איפוס יוצר נקודת שחזור. הגיבויים נשמרים במכשיר הזה בלבד.</div>
+          <div class="hint" style="margin:0 0 8px">כל איפוס יוצר נקודת שחזור בשרת — כל מנהלת מורשית יכולה לשחזר ממנה, מכל עמדה.</div>
           <div id="resetHistory"></div>
         </div>
       </div>
@@ -1202,13 +1202,17 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.16.0';
+const APP_VERSION = '1.16.1';
 const CHANGELOG = [
+  { v: '1.16.1', notes: [
+    'שיפור פרטיות: זהות המנהלות לא נחשפת יותר באפליקציה — ההרשאות נקבעות בשרת בלבד',
+    'תוקן טקסט: הגיבויים נשמרים בשרת (לא במכשיר) וזמינים לשחזור מכל עמדה מורשית'
+  ] },
   { v: '1.16.0', notes: [
-    'הרשאות: רק "מרים" ו-"מנג\'ר" (מנהל־על) רואות את ההגדרות הרגישות ויכולות לאפס/לשחזר. לשאר העמדות מוצגות רק הגדרות בסיסיות (מראה, התנהגות, עמדה, גרסה)',
-    'ניהול משתמשים למנהלות: צפייה בכל העמדות, חסימה, שינוי שם ומחיקה. מרים אינה יכולה לחסום/למחוק את מנג\'ר',
+    'הרשאות: רק מנהלות מורשות רואות את ההגדרות הרגישות ויכולות לאפס/לשחזר. לשאר העמדות מוצגות רק הגדרות בסיסיות (מראה, התנהגות, עמדה, גרסה)',
+    'ניהול משתמשים למנהלות: צפייה בכל העמדות, חסימה, שינוי שם ומחיקה — לפי דרגת הרשאה',
     'שמות עמדה ייחודיים: אי אפשר לפתוח שתי עמדות באותו שם — הראשונה תופסת אותו',
-    'עמדה חסומה אינה יכולה לסרוק, וכל האיפוסים/השחזורים מאובטחים גם בשרת'
+    'עמדה חסומה אינה יכולה לסרוק, וכל האיפוסים/השחזורים מאובטחים בשרת'
   ] },
   { v: '1.15.0', notes: [
     'איפוס הסריקות עבר ממסך הסריקה להגדרות → "איפוס ושחזור", עם אזהרה ואישור לפני מחיקה',
@@ -1354,20 +1358,23 @@ const TABS = [
 function defaultTab() { return TABS.some(t => t.id === state.defaultTab) ? state.defaultTab : 'scan'; }
 
 /* ---------- Access control (admins) ----------
- * Two admin names by rank: "מנג'ר" (super-admin) outranks "מרים". Both can reset,
- * restore, manage users, and see the sensitive settings; everyone else sees only
- * the basic ones and can't reset. A management action needs the actor to strictly
- * outrank the target, so מרים can't block/remove מנג'ר. Names are matched with
- * apostrophe variants normalized (' ׳ ’ ′). Mirrors the Worker's rules — the
- * server is the real gate; this just shapes the UI. */
-const ADMIN_RANKS = { "מנג'ר": 2, 'מרים': 1 };
+ * Admin status comes from the SERVER — it holds the admin names (the ADMIN_NAMES
+ * secret) and returns our rank via /api/claim-name. The names are deliberately
+ * NOT shipped in this bundle, so no one can read who the admins are from the app.
+ * Rank 0 = regular station; rank >= 1 can reset/restore/manage and sees the
+ * sensitive settings. A management action needs the actor to strictly outrank the
+ * target. The server is the real gate; this just shapes the UI. */
 function normName(s) { return String(s || '').trim().replace(/[׳’′ʼ]/g, "'"); }
-function adminRank(name) { return ADMIN_RANKS[normName(name)] || 0; }
-function isAdmin() { return adminRank(state.session) >= 1; }
+// IMPORTANT: the admin names are NOT shipped to the browser — the SERVER holds
+// them (ADMIN_NAMES secret) and tells us our rank via /api/claim-name. So no one
+// can read who the admins are from the app. We only cache what the server said
+// about OUR own station.
+function isAdmin() { return (stationClaim.rank || 0) >= 1; }
 
-// Live claim state for this station (from /api/claim-name): are we the owner of
-// our name, and has the admin blocked us?
-let stationClaim = { owner: true, blocked: false, taken: false };
+// Live claim state for this station (from /api/claim-name): our rank (0 = not an
+// admin), whether we own our name, and whether the admin blocked us. Rank starts
+// at 0 so sensitive settings stay hidden until the server confirms otherwise.
+let stationClaim = { owner: true, blocked: false, taken: false, rank: 0 };
 
 /* ---------- Per-wig helpers ----------
  * Effective status = a card override if one was set, else the sheet's value.
@@ -3731,10 +3738,11 @@ async function claimName(force) {
       body: JSON.stringify({ count_id: state.countId, name: normName(state.session), device_id: state.deviceId })
     });
     const j = await r.json().catch(() => ({}));
-    if (r.status === 409 || j.taken) stationClaim = { owner: false, blocked: false, taken: true };
-    else stationClaim = { owner: !!j.owner, blocked: !!j.blocked, taken: false };
+    if (r.status === 409 || j.taken) stationClaim = { owner: false, blocked: false, taken: true, rank: 0 };
+    else stationClaim = { owner: !!j.owner, blocked: !!j.blocked, taken: false, rank: j.rank || 0 };
   } catch (e) { /* keep last known claim state on a network blip */ }
   applyBlockGate();
+  applyAdminGate();   // the server just told us our rank — reflect it in the UI
   return stationClaim;
 }
 
@@ -3754,7 +3762,7 @@ function applyBlockGate() {
   if (chip) chip.classList.toggle('blocked', blocked);
 }
 
-// Show/hide the sensitive settings: only admins (מרים / מנג'ר) see them.
+// Show/hide the sensitive settings: only admins (server-confirmed rank >= 1) see them.
 function applyAdminGate() {
   const admin = isAdmin();
   document.querySelectorAll('[data-admin-only]').forEach(el => el.classList.toggle('hidden', !admin));
@@ -3798,7 +3806,7 @@ async function renderUsers() {
     el.innerHTML = '<p class="small" style="margin:0;color:var(--bad)">לא הצלחתי לטעון משתמשים: ' + esc(e.message) + '</p>';
     return;
   }
-  const myRank = data.actor_rank || adminRank(state.session);
+  const myRank = data.actor_rank || stationClaim.rank || 0;
   const list = data.stations || [];
   const rows = list.map((s, i) => {
     const canManage = myRank > s.rank;
