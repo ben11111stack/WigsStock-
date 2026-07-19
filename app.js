@@ -18,17 +18,20 @@
  * auto-added so the manager can label it and mark whether it's in-store. */
 const IN_STOCK = 'in-stock';
 const DEFAULT_STATUSES = [
-  { key: 'in-stock',           label: 'במלאי',       inStore: true  },
-  { key: 'consignment',        label: 'קונסיגנציה',  inStore: true  },
-  { key: 'sold',               label: 'נמכרה',       inStore: false },
-  { key: 'returned',           label: 'הוחזרה',      inStore: false },
-  { key: 'fix-return',         label: 'תיקון/החזרה', inStore: false },
-  { key: 'personal-use',       label: 'שימוש אישי',  inStore: false },
-  { key: 'inventory-reserved', label: 'שמורה',       inStore: false },
-  { key: 'barter',             label: 'ברטר',        inStore: false },
-  { key: 'wish-list',          label: 'לרכישה',      inStore: false },
-  { key: 'missing',            label: 'חסרה',        inStore: false },
-  { key: 'other',              label: 'אחר',         inStore: false }
+  { key: 'other',              label: 'Other',              inStore: false },
+  { key: 'in-stock',           label: 'In Stock',           inStore: true  },
+  { key: 'sold',               label: 'Sold',               inStore: false },
+  { key: 'returned',           label: 'Returned',           inStore: false },
+  { key: 'personal-use',       label: 'Personal Use',       inStore: false },
+  { key: 'damaged',            label: 'damaged',            inStore: false },
+  { key: 'consignment',        label: 'Consignment',        inStore: true  },
+  { key: 'inventory-reserved', label: 'Inventory Reserved', inStore: false },
+  { key: 'ordered',            label: 'Ordered',            inStore: false },
+  { key: 'order-reserved',     label: 'Order Reserved',     inStore: false },
+  { key: 'wish-list',          label: 'Wish List',          inStore: false },
+  { key: 'barter',             label: 'Barter',             inStore: false },
+  { key: 'fix-return',         label: 'Fix-Return',         inStore: false },
+  { key: 'missing',            label: 'Missing',            inStore: false }
 ];
 // Effective vocabulary: the user's edited list if any, else the defaults.
 function statusVocab() { return (state.statusVocab && state.statusVocab.length) ? state.statusVocab : DEFAULT_STATUSES; }
@@ -47,6 +50,68 @@ function ensureStatus(key) {
   if (!key || statusMeta(key)) return;
   ensureVocabCopy().push({ key, label: key, inStore: false });
 }
+// Canonicalize a free-text status into a stable key. Lower-cases, trims, and
+// collapses spaces/underscores to a single hyphen — so the sheet's "In Stock",
+// "in stock" and "in-stock" all resolve to the one key `in-stock` instead of
+// spawning three look-alike statuses. Non-latin text (e.g. Hebrew) is left as
+// its own key, matching the old behavior.
+function normStatusKey(s) {
+  return String(s == null ? '' : s)
+    .trim().toLowerCase()
+    .replace(/[\s_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+// One-time cleanup that folds the historical duplicate statuses onto the
+// canonical vocabulary. Idempotent: running it on an already-clean state is a
+// no-op, so it's safe to call on every load and on every settings pull.
+// Returns true if it actually changed the vocabulary.
+function migrateStatusVocab() {
+  const canonical = DEFAULT_STATUSES.map(s => ({ key: s.key, label: s.label, inStore: !!s.inStore }));
+  const byKey = {}; canonical.forEach(s => { byKey[s.key] = s; });
+  const before = JSON.stringify(state.statusVocab);
+  const old = Array.isArray(state.statusVocab) ? state.statusVocab : [];
+  const extra = [];
+  for (const s of old) {
+    if (!s || !s.key) continue;
+    const ck = normStatusKey(s.key);
+    if (byKey[ck]) {
+      // A duplicate of a canonical status — keep the manager's "in-store" choice
+      // (OR it in, so a checked look-alike survives the merge).
+      if (s.inStore) byKey[ck].inStore = true;
+    } else if (!extra.some(e => e.key === ck) && ck) {
+      // A genuinely custom status the user added — preserve it (still deletable).
+      extra.push({ key: ck, label: s.label || s.key, inStore: !!s.inStore });
+    }
+  }
+  state.statusVocab = canonical.concat(extra);
+  return JSON.stringify(state.statusVocab) !== before;
+}
+
+// Remap the per-wig status maps (local inventory + synced card overrides) onto
+// the canonical keys, so a wig imported as "in stock" now matches `in-stock`.
+function migrateStatusData() {
+  const fix = (map) => {
+    if (!map) return;
+    for (const bc in map) {
+      const nk = normStatusKey(map[bc]);
+      if (nk && nk !== map[bc]) map[bc] = nk;
+    }
+  };
+  fix(state.inventory);
+  fix(state.statusOverrides);
+}
+
+// Run the full status cleanup once per device (schema v2). The vocabulary and
+// overrides are cloud-synced, so pushing the cleaned copy heals every station.
+function migrateStatuses() {
+  if (state.statusSchemaV >= 2) { migrateStatusVocab(); return; }
+  migrateStatusVocab();
+  migrateStatusData();
+  state.statusSchemaV = 2;
+}
+
 // Legacy export — the current set of status keys.
 const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 
@@ -54,11 +119,14 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.16.3';
+const APP_VERSION = '1.16.4';
 // NOTE: this changelog is visible to EVERY station (Settings → גרסאות). Keep the
 // notes generic — never describe the permissions / manager / block / user-
 // management system here, or regular stations learn it exists.
 const CHANGELOG = [
+  { v: '1.16.4', notes: [
+    'ניקוי וסידור רשימת הסטטוסים: סטטוסים כפולים מוזגו אוטומטית, וכל סטטוס ניתן עכשיו לעריכה ולמחיקה'
+  ] },
   { v: '1.16.3', notes: [
     'שיפורים ותיקונים כלליים'
   ] },
@@ -198,6 +266,7 @@ const state = {
   invNames: {},      // barcode -> wig name read from the sheet's name column (if any)
   statusOverrides: {}, // barcode -> status changed from the wig card (survives sheet reload)
   statusVocab: null, // user-edited status vocabulary ([{key,label,inStore}]); null = defaults
+  statusSchemaV: 0,  // local marker: has the one-time status-dedup migration run? (see migrateStatuses)
   logoAnim: true,    // constant motion of the small header logo (splash always plays regardless)
   defaultTab: 'scan',// which tab opens on app launch
   lastSettingsAt: 0  // newest shared-settings timestamp this device has applied (local bookkeeping)
@@ -297,6 +366,9 @@ function load() {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) Object.assign(state, JSON.parse(raw));
   } catch (e) {}
+  // Fold legacy duplicate statuses onto the canonical vocabulary before anything
+  // reads it (idempotent — safe on already-clean state).
+  migrateStatuses();
   // Baseline the settings signature so early/benign save()s don't push local
   // settings over the server's — only genuine user changes push after this.
   seedSettingsSig();
@@ -477,7 +549,7 @@ function importInventory(text) {
   let added = 0, unknownStatus = 0;
   for (const r of dataRows) {
     const barcode = normBarcode(r[map.barcodeCol] || '');
-    let status = (r[map.statusCol] || '').trim().toLowerCase();
+    let status = normStatusKey(r[map.statusCol] || '');   // canonical key: "In Stock" → in-stock (no duplicate)
     if (!barcode) continue;
     if (!status) status = 'other';
     else if (!statusMeta(status)) { unknownStatus++; ensureStatus(status); }   // keep the real value; let the manager label it
@@ -1757,8 +1829,12 @@ function applyRemoteSettings(settings, at) {
   if (at <= (state.lastSettingsAt || 0)) return;   // not newer than what we already have
   for (const k of SERVER_SETTINGS_KEYS) if (k in settings) state[k] = settings[k];
   state.lastSettingsAt = at;
+  // A station that hasn't migrated yet can serve back the old duplicate
+  // vocabulary — re-clean it here and push the fix so the server heals too.
+  const healed = migrateStatusVocab();
   seedSettingsSig();                               // adopt as baseline (no echo back)
   save();
+  if (healed) pushSettings();                      // propagate the cleaned vocabulary to the server
   applyTheme(); applyLogoAnim();
   renderTheme(); renderStatusManager();
   reconcile(); renderReport(true); renderScanStats();
@@ -2374,12 +2450,11 @@ function renderStatusManager() {
   const el = $('#statusManager');
   if (!el) return;
   const v = statusVocab();
-  const isDefault = k => DEFAULT_STATUSES.some(d => d.key === k);
   const rows = v.map(s => `
     <div class="st-row" data-st-key="${esc(s.key)}">
       <input class="st-label" data-st-label value="${esc(s.label)}" maxlength="24" autocomplete="off" aria-label="שם הסטטוס">
       <label class="st-toggle"><input type="checkbox" data-st-instore${s.inStore ? ' checked' : ''}><span>בחנות</span></label>
-      <button class="icon-btn danger st-del" title="מחק סטטוס"${isDefault(s.key) ? ' disabled' : ''}>${ic('trash')}</button>
+      <button class="icon-btn danger st-del" title="מחק סטטוס">${ic('trash')}</button>
     </div>`).join('');
   el.innerHTML = `
     <p class="muted small">כל פאה מקבלת סטטוס. סמני אילו סטטוסים נחשבים "בחנות" (נספרים במלאי). השם הוא מה שמוצג באפליקציה.</p>
@@ -2405,7 +2480,20 @@ function renderStatusManager() {
       const v2 = ensureVocabCopy(); const t = v2.find(s => s.key === key);
       if (t) { t.inStore = inStoreEl.checked; afterEdit(); }
     });
-    if (delEl && !delEl.disabled) delEl.addEventListener('click', () => {
+    if (delEl) delEl.addEventListener('click', async () => {
+      // Every status is deletable now — but warn before removing one that drives
+      // the inventory count or that wigs are currently using.
+      const meta = statusMeta(key);
+      const inv = effInv();
+      let inUse = 0; for (const bc in inv) if (inv[bc] === key) inUse++;
+      const parts = [];
+      if (meta && meta.inStore) parts.push('הסטטוס הזה מסומן "בחנות" ונספר במלאי — מחיקתו תגרום לפאות עם הסטטוס הזה להפסיק להיספר במלאי.');
+      if (inUse) parts.push(inUse + ' פאות משתמשות בסטטוס הזה כרגע. הן לא יימחקו, אבל יאבדו את השם המוצג.');
+      if (parts.length) {
+        const ok = await uiConfirm(parts.join('\n\n') + '\n\nלמחוק את הסטטוס?',
+          { title: 'מחיקת סטטוס', danger: true, confirmText: 'מחק' });
+        if (!ok) return;
+      }
       const v2 = ensureVocabCopy(); const i = v2.findIndex(s => s.key === key);
       if (i >= 0) { v2.splice(i, 1); afterEdit(); renderStatusManager(); }
     });
@@ -2843,5 +2931,5 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
 
 // Expose pure logic for the Node test runner (no effect in the browser).
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { normBarcode, parseCSV, detectColumns, importInventory, reconcile, toCSV, colName, crc32, buildXlsx, state, isInStore, statusOf, effInv, statusLabel, wigName, KNOWN_STATUSES, DEFAULT_STATUSES };
+  module.exports = { normBarcode, parseCSV, detectColumns, importInventory, reconcile, toCSV, colName, crc32, buildXlsx, state, isInStore, statusOf, effInv, statusLabel, wigName, KNOWN_STATUSES, DEFAULT_STATUSES, normStatusKey, migrateStatusVocab, migrateStatusData, migrateStatuses };
 }
