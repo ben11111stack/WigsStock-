@@ -54,21 +54,22 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.16.1';
+const APP_VERSION = '1.16.2';
+// NOTE: this changelog is visible to EVERY station (Settings → גרסאות). Keep the
+// notes generic — never describe the permissions / manager / block / user-
+// management system here, or regular stations learn it exists.
 const CHANGELOG = [
+  { v: '1.16.2', notes: [
+    'שיפורים ותיקונים כלליים'
+  ] },
   { v: '1.16.1', notes: [
-    'שיפור פרטיות: זהות המנהלות לא נחשפת יותר באפליקציה — ההרשאות נקבעות בשרת בלבד',
-    'תוקן טקסט: הגיבויים נשמרים בשרת (לא במכשיר) וזמינים לשחזור מכל עמדה מורשית'
+    'שיפורי יציבות'
   ] },
   { v: '1.16.0', notes: [
-    'הרשאות: רק מנהלות מורשות רואות את ההגדרות הרגישות ויכולות לאפס/לשחזר. לשאר העמדות מוצגות רק הגדרות בסיסיות (מראה, התנהגות, עמדה, גרסה)',
-    'ניהול משתמשים למנהלות: צפייה בכל העמדות, חסימה, שינוי שם ומחיקה — לפי דרגת הרשאה',
-    'שמות עמדה ייחודיים: אי אפשר לפתוח שתי עמדות באותו שם — הראשונה תופסת אותו',
-    'עמדה חסומה אינה יכולה לסרוק, וכל האיפוסים/השחזורים מאובטחים בשרת'
+    'שיפורים בסנכרון בין העמדות וביציבות'
   ] },
   { v: '1.15.0', notes: [
-    'איפוס הסריקות עבר ממסך הסריקה להגדרות → "איפוס ושחזור", עם אזהרה ואישור לפני מחיקה',
-    'לפני כל איפוס נשמר גיבוי אוטומטי בשרת (מי איפס, מתי וכמה נסרק) — כל עמדה יכולה לשחזר ממנו את כל הסריקות בכל רגע, גם אם המכשיר שאיפס לא זמין'
+    'שיפורים בהגדרות ובגיבוי הנתונים'
   ] },
   { v: '1.14.0', notes: [
     'מנוע סריקה חדש (zxing-cpp/WASM): תגי הברקוד של הפאות (Code 128) נסרקים עכשיו במצלמה — המנוע הישן פספס אותם גם בתמונה חדה',
@@ -2639,7 +2640,7 @@ async function onNameCommitted(raw, el) {
   }
   applyAdminGate();
   renderUsers();
-  if (c && c.blocked) uiAlert('העמדה הזו נחסמה על ידי המנהלת. לא ניתן לסרוק.', { danger: true, title: 'עמדה חסומה' });
+  if (c && c.blocked) uiAlert('לא ניתן לסרוק מהעמדה הזו כרגע. נסי שוב מאוחר יותר.', { title: 'העמדה אינה זמינה' });
 }
 
 // Admin: list all stations/users with block / rename / delete controls.
