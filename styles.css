@@ -539,6 +539,24 @@ td .ic { width: 15px; height: 15px; }
 .st-add input:focus { outline: none; border-color: var(--primary); }
 .st-add .btn { flex: none; margin: 0; }
 
+/* reset & restore (settings) */
+.danger-note { display: flex; gap: 10px; align-items: flex-start; padding: 12px 13px; margin: 2px 0 14px;
+  border: 1px solid color-mix(in oklab, var(--bad) 40%, var(--line)); border-radius: var(--r);
+  background: color-mix(in oklab, var(--bad) 9%, var(--bg)); }
+.danger-note .danger-note-ic { flex: none; color: var(--bad); display: inline-flex; margin-top: 1px; }
+.danger-note .danger-note-ic svg { width: 20px; height: 20px; }
+.danger-note b { color: color-mix(in oklab, var(--bad) 72%, var(--ink)); }
+.danger-note p { margin: 5px 0 0; font-size: 13px; line-height: 1.55; color: var(--ink-2); }
+.rh-list { display: flex; flex-direction: column; gap: 8px; }
+.rh-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.rh-info { flex: 1 1 auto; min-width: 0; }
+.rh-main { font-size: 14px; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.rh-main svg { width: 15px; height: 15px; color: var(--ink-2); flex: none; }
+.rh-sub { margin-top: 3px; }
+.rh-actions { flex: none; display: flex; align-items: center; gap: 6px; }
+.rh-actions .btn { margin: 0; }
+
 /* ---------- In-app dialog (replaces native alert/confirm) ---------- */
 .ui-dialog { align-items: center; padding: 22px; z-index: 90; }
 .ui-dialog .dlg-card { width: 100%; max-width: 360px; border: 1px solid var(--line);

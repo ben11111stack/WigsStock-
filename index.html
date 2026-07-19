@@ -100,7 +100,6 @@
             <button id="batchBtn" class="icon-btn" title="מצב רשימה (באטש)" data-ic="list"></button>
             <button id="flashBtn" class="icon-btn hidden" title="פלאש" data-ic="zap"></button>
             <button id="cameraBtn" class="icon-btn" title="הפעל/עצור מצלמה" data-ic="camera"></button>
-            <button id="resetScans" class="icon-btn danger" title="אפס סריקות" data-ic="reset"></button>
           </span>
         </div>
         <div class="scan-input-row">
@@ -265,6 +264,26 @@
           </label>
           <button class="btn" id="writeBtn">כתוב עכשיו לשיטס</button>
           <p class="small" id="writeNote" style="margin:8px 0 0"></p>
+        </div>
+      </div>
+
+      <div class="acc">
+        <button class="acc-head">
+          <span class="acc-titles"><span class="acc-title"><span data-ic="reset"></span> איפוס ושחזור</span><span class="acc-sub">איפוס כל הסריקות — עם גיבוי לשחזור</span></span>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div class="danger-note">
+            <span class="danger-note-ic" data-ic="alert"></span>
+            <div>
+              <b>אזור מסוכן — לא להשתמש בלי צורך.</b>
+              <p>האיפוס מוחק את <b>כל הסריקות של הספירה בכל העמדות</b> (המלאי, השמות והסטטוסים נשארים). לפני כל איפוס נשמר כאן גיבוי אוטומטי — מי איפס, מתי וכמה נסרק — ואפשר לשחזר ממנו בכל רגע.</p>
+            </div>
+          </div>
+          <button class="btn danger" id="resetScansSettings"><span data-ic="reset"></span> אפס את כל הסריקות</button>
+          <div class="fld-lbl" style="margin-top:22px">היסטוריית גיבויים לשחזור</div>
+          <div class="hint" style="margin:0 0 8px">כל איפוס יוצר נקודת שחזור. הגיבויים נשמרים במכשיר הזה בלבד.</div>
+          <div id="resetHistory"></div>
         </div>
       </div>
 
