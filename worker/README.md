@@ -35,8 +35,13 @@ That's it — every scan syncs, and each station sees the merged count.
 - `GET  /api/health`
 - `POST /api/sync`  `{ count_id, device, scans: { barcode: count } }`
 - `GET  /api/scans?count_id=...` → `{ scans: { barcode: total }, devices, barcodes }`
+- `POST /api/reset`  `{ count_id, by }` → snapshots the count's merged totals into `backups`, then wipes. Returns `{ ok, deleted, reset_at, backup_id }`.
+- `GET  /api/backups?count_id=...` → `{ backups: [{ id, created_at, by, total_scanned, total_count }] }` (newest first) — the restore points shown in the app under Settings → איפוס ושחזור.
+- `POST /api/restore`  `{ count_id, backup_id }` → rewrites the count's scans to that snapshot and bumps `reset_at`, so every station converges on the restored counts on next pull. Returns `{ ok, restored, reset_at }`.
 
-## Reset a count
+## Reset / restore a count
+The app does this from **Settings → איפוס ושחזור** (reset auto-backs up; any station can restore).
+Manual wipe (does **not** create a backup):
 ```bash
 npx wrangler d1 execute wigsstock --remote --command "DELETE FROM scans WHERE count_id='יולי-2026'"
 ```

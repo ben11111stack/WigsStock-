@@ -11,8 +11,11 @@
  *
  * Endpoints (all JSON, CORS open):
  *   GET  /api/health
- *   POST /api/sync   { count_id, device, scans: { barcode: count, ... } }
+ *   POST /api/sync    { count_id, device, scans: { barcode: count, ... } }
  *   GET  /api/scans?count_id=...   -> { scans: { barcode: total }, ... }
+ *   POST /api/reset   { count_id, by } -> snapshots to `backups` then wipes
+ *   GET  /api/backups?count_id=...  -> { backups: [{id, created_at, by, ...}] }
+ *   POST /api/restore { count_id, backup_id } -> restores a snapshot for all stations
  * ===================================================================== */
 
 const CORS = {
@@ -71,8 +74,22 @@ async function ensureSchema(env) {
   // Defensive: add the settings columns to a meta table that predates them.
   try { await env.DB.prepare(`ALTER TABLE meta ADD COLUMN settings TEXT`).run(); } catch (e) { /* exists */ }
   try { await env.DB.prepare(`ALTER TABLE meta ADD COLUMN settings_at INTEGER`).run(); } catch (e) { /* exists */ }
+  // Central, shared reset backups: a snapshot of a count's merged totals taken
+  // right before each reset. Lives here (not on the device that clicked reset)
+  // so ANY station can list and restore — even if the resetting device is gone.
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS backups (
+       id TEXT PRIMARY KEY, count_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+       by_who TEXT, total_scanned INTEGER, total_count INTEGER, data TEXT NOT NULL)`
+  ).run();
+  try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_backups_count ON backups(count_id, created_at)`).run(); } catch (e) { /* exists */ }
   schemaReady = true;
 }
+
+// Max characters of a backup's JSON blob we'll store (guards D1 row limits).
+const MAX_BACKUP_BLOB = 4000000;
+// Keep at most this many backups per count (prune the oldest beyond it).
+const MAX_BACKUPS_PER_COUNT = 50;
 
 // Aggregate a count's scans per barcode: total, last time, and stations.
 async function aggregateScans(env, countId) {
@@ -194,18 +211,105 @@ export default {
       }
 
       // Wipe an entire count (all devices) — used by the app's reset button.
-      // Also bump reset_at so every station clears its local scans on next pull.
+      // BEFORE wiping we snapshot the merged totals into `backups` (a central,
+      // shared restore point, recording who reset), so any station can bring the
+      // scans back later. Then bump reset_at so every station clears on next pull.
       if (path === '/api/reset' && req.method === 'POST') {
         const body = await req.json();
         const countId = (body.count_id || '').trim();
         if (!countId) return json({ error: 'count_id required' }, 400);
-        const r = await env.DB.prepare('DELETE FROM scans WHERE count_id = ?1').bind(countId).run();
+        const by = String(body.by || '').trim().slice(0, MAX_ID_LEN);
         const now = Date.now();
+
+        // snapshot the current merged totals (skip if the count is already empty)
+        let backupId = null;
+        const agg = await aggregateScans(env, countId);
+        const barcodes = Object.keys(agg);
+        if (barcodes.length) {
+          const flat = {};
+          let totalCount = 0;
+          for (const bc of barcodes) { flat[bc] = agg[bc].count; totalCount += agg[bc].count; }
+          const blob = JSON.stringify(flat);
+          if (blob.length <= MAX_BACKUP_BLOB) {
+            backupId = String(now) + '-' + Math.random().toString(36).slice(2, 8);
+            await env.DB.prepare(
+              `INSERT INTO backups (id, count_id, created_at, by_who, total_scanned, total_count, data)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+            ).bind(backupId, countId, now, by || null, barcodes.length, totalCount, blob).run();
+            // prune old backups beyond the cap
+            try {
+              await env.DB.prepare(
+                `DELETE FROM backups WHERE count_id = ?1 AND id NOT IN
+                   (SELECT id FROM backups WHERE count_id = ?1 ORDER BY created_at DESC LIMIT ?2)`
+              ).bind(countId, MAX_BACKUPS_PER_COUNT).run();
+            } catch (e) { /* non-fatal */ }
+          }
+        }
+
+        const r = await env.DB.prepare('DELETE FROM scans WHERE count_id = ?1').bind(countId).run();
         await env.DB.prepare(
           `INSERT INTO meta (count_id, reset_at, updated_at) VALUES (?1, ?2, ?3)
            ON CONFLICT(count_id) DO UPDATE SET reset_at = excluded.reset_at, updated_at = excluded.updated_at`
         ).bind(countId, now, now).run();
-        return json({ ok: true, deleted: (r.meta && r.meta.changes) || 0, reset_at: now });
+        return json({ ok: true, deleted: (r.meta && r.meta.changes) || 0, reset_at: now, backup_id: backupId });
+      }
+
+      // List a count's restore points (metadata only — newest first). Any station
+      // can read this and offer a restore.
+      if (path === '/api/backups' && req.method === 'GET') {
+        const countId = (url.searchParams.get('count_id') || '').trim();
+        if (!countId) return json({ error: 'count_id required' }, 400);
+        const { results } = await env.DB.prepare(
+          `SELECT id, created_at, by_who, total_scanned, total_count FROM backups
+           WHERE count_id = ?1 ORDER BY created_at DESC LIMIT ?2`
+        ).bind(countId, MAX_BACKUPS_PER_COUNT).all();
+        const backups = (results || []).map(b => ({
+          id: b.id, created_at: b.created_at || 0, by: b.by_who || '',
+          total_scanned: b.total_scanned || 0, total_count: b.total_count || 0
+        }));
+        return json({ ok: true, backups });
+      }
+
+      // Restore a backup: rewrite the count's scans to the snapshot's totals and
+      // bump reset_at so EVERY station converges on the restored counts on next
+      // pull. Runs entirely server-side — the restoring device needs no local copy.
+      if (path === '/api/restore' && req.method === 'POST') {
+        const body = await req.json();
+        const countId = (body.count_id || '').trim();
+        const backupId = String(body.backup_id || '').trim();
+        if (!countId || !backupId) return json({ error: 'count_id and backup_id required' }, 400);
+        const row = await env.DB.prepare(
+          `SELECT data FROM backups WHERE id = ?1 AND count_id = ?2`
+        ).bind(backupId, countId).first();
+        if (!row || !row.data) return json({ error: 'backup not found' }, 404);
+        let flat;
+        try { flat = JSON.parse(row.data); } catch (e) { return json({ error: 'corrupt backup' }, 500); }
+
+        const now = Date.now();
+        // clear the count, then write the snapshot back under a synthetic device
+        await env.DB.prepare('DELETE FROM scans WHERE count_id = ?1').bind(countId).run();
+        const entries = Object.entries(flat)
+          .filter(([bc, c]) => bc && String(bc).length <= MAX_BARCODE_LEN && (c | 0) > 0);
+        let restored = 0;
+        for (let i = 0; i < entries.length; i += 50) {
+          const chunk = entries.slice(i, i + 50);
+          const stmts = chunk.map(([barcode, count]) =>
+            env.DB.prepare(
+              `INSERT INTO scans (count_id, device, barcode, count, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5)
+               ON CONFLICT(count_id, device, barcode)
+               DO UPDATE SET count = excluded.count, updated_at = excluded.updated_at`
+            ).bind(countId, 'שחזור', String(barcode), count | 0, now)
+          );
+          if (stmts.length) { await env.DB.batch(stmts); restored += stmts.length; }
+        }
+        // bump reset_at so all stations drop stale local state and re-pull the restore
+        await env.DB.prepare(
+          `INSERT INTO meta (count_id, reset_at, updated_at) VALUES (?1, ?2, ?3)
+           ON CONFLICT(count_id) DO UPDATE SET reset_at = excluded.reset_at, updated_at = excluded.updated_at`
+        ).bind(countId, now, now).run();
+        if (restored > 0 && ctx && ctx.waitUntil) ctx.waitUntil(maybeWriteback(env, countId));
+        return json({ ok: true, restored, reset_at: now });
       }
 
       // Register the shared inventory source (Google Sheet link) for a count,

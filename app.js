@@ -58,7 +58,7 @@ const APP_VERSION = '1.15.0';
 const CHANGELOG = [
   { v: '1.15.0', notes: [
     'איפוס הסריקות עבר ממסך הסריקה להגדרות → "איפוס ושחזור", עם אזהרה ואישור לפני מחיקה',
-    'לפני כל איפוס נשמר גיבוי אוטומטי (מי איפס, מתי וכמה נסרק) — וניתן לשחזר ממנו את כל הסריקות בכל רגע'
+    'לפני כל איפוס נשמר גיבוי אוטומטי בשרת (מי איפס, מתי וכמה נסרק) — כל עמדה יכולה לשחזר ממנו את כל הסריקות בכל רגע, גם אם המכשיר שאיפס לא זמין'
   ] },
   { v: '1.14.0', notes: [
     'מנוע סריקה חדש (zxing-cpp/WASM): תגי הברקוד של הפאות (Code 128) נסרקים עכשיו במצלמה — המנוע הישן פספס אותם גם בתמונה חדה',
@@ -186,8 +186,7 @@ const state = {
   statusVocab: null, // user-edited status vocabulary ([{key,label,inStore}]); null = defaults
   logoAnim: true,    // constant motion of the small header logo (splash always plays regardless)
   defaultTab: 'scan',// which tab opens on app launch
-  lastSettingsAt: 0, // newest shared-settings timestamp this device has applied (local bookkeeping)
-  resetHistory: []   // backups taken before each scan-reset: [{id, at, by, countId, totalScanned, totalCount, scans, names, statusOverrides}] (local to this device)
+  lastSettingsAt: 0  // newest shared-settings timestamp this device has applied (local bookkeeping)
 };
 
 // The five tabs, in nav order — used for the "default tab" picker in Settings.
@@ -1984,6 +1983,7 @@ function showTab(name) {
   if (name !== 'report') closeLookupScan();           // free the lookup camera when leaving the report
   if (name === 'report') { renderReport(); if (cloudEnabled()) pullCloud(); }   // refresh across stations
   if (name === 'export') renderExportPreview();
+  if (name === 'settings') renderResetHistory();      // refresh restore points from the server
   if (name === 'scan') {
     // require a station name first; start camera within the tap so iOS allows it
     if (applyStationGate()) { setTimeout(() => $('#stationGateInput').focus(), 60); }
@@ -2188,10 +2188,10 @@ function init() {
   $('#camStart').addEventListener('click', startCamera);   // tap-to-start (required on iOS)
   $('#flashBtn').addEventListener('click', toggleTorch);
 
-  // reset scans (moved to Settings → איפוס ושחזור)
+  // reset scans (moved to Settings → איפוס ושחזור). History loads lazily when
+  // the Settings tab opens (see showTab), so no network call on every launch.
   const resetSettingsBtn = $('#resetScansSettings');
   if (resetSettingsBtn) resetSettingsBtn.addEventListener('click', doResetScans);
-  renderResetHistory();
 
   // undo / redo / batch mode
   const undoBtn = $('#undoBtn'), redoBtn = $('#redoBtn'), batchBtn = $('#batchBtn');
@@ -2379,130 +2379,146 @@ function renderStatusManager() {
   });
 }
 /* ---------- Scan reset + restore (Settings → איפוס ושחזור) ----------
- * Reset wipes every scan of the current count — locally and, when online, across
- * ALL stations (via /api/reset). It's destructive, so before wiping we snapshot
- * the merged scan totals into state.resetHistory. Each backup records WHO reset
- * (the station/user name), WHEN, and HOW MUCH, and can be restored later. The
- * history lives in this device's localStorage only — it is not synced. */
+ * Reset wipes every scan of the current count across ALL stations (via
+ * /api/reset). It's destructive, so the SERVER snapshots the merged totals into
+ * a shared `backups` table BEFORE wiping — recording WHO reset, WHEN and HOW
+ * MUCH. Because the backup lives on the server (not the device that clicked
+ * reset), ANY station can list it (/api/backups) and restore it (/api/restore),
+ * even if the resetting phone is gone. Restore rewrites the cloud counts and
+ * bumps reset_at so every station converges on the restored snapshot. */
 function fmtResetTime(ts) {
   try { return new Date(ts).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }); }
   catch (e) { return new Date(ts).toLocaleString(); }
 }
+function resetByName() { return (state.session || '').trim() || (state.deviceId || 'לא ידוע'); }
 
 async function doResetScans() {
   const merged = effectiveScans();
   const bcs = Object.keys(merged);
-  const totalScanned = bcs.length;
   const totalCount = bcs.reduce((s, k) => s + (merged[k] ? merged[k].count || 0 : 0), 0);
+
+  if (!cloudEnabled()) {
+    // No shared server → no central backup. Warn clearly before allowing it.
+    const go = await uiConfirm(
+      'סנכרון הענן כבוי, ולכן לא ניתן לשמור גיבוי מרכזי לשחזור.\n\n' +
+      'איפוס עכשיו ימחק את הסריקות ללא אפשרות שחזור. מומלץ להפעיל סנכרון ענן (הגדרות → סנכרון ענן) לפני איפוס.\n\n' +
+      'לאפס בכל זאת, בלי גיבוי?',
+      { title: 'אזהרה — אין גיבוי', danger: true, confirmText: 'אפס בלי גיבוי', cancelText: 'ביטול' }
+    );
+    if (!go) return;
+    state.scans = {}; state.dirty = {}; state.cloudScans = {}; state.sessionLog = [];
+    undoStack.length = 0; redoStack.length = 0; updateUndoRedo();
+    save();
+    renderReport(true); renderScanStats(); renderPending(); renderSessionLog();
+    const sb0 = $('#scanBanner');
+    if (sb0) { sb0.className = 'scan-banner'; sb0.innerHTML = '<div class="msg muted">מוכן לסריקה…</div>'; }
+    return;
+  }
 
   const ok = await uiConfirm(
     'האם את בטוחה שברצונך לאפס את כל הסריקות?\n\n' +
     'הפעולה מוחקת את כל ' + totalCount.toLocaleString() + ' הסריקות של הספירה — בכל העמדות. ' +
     'לא ניתן לסרוק אותן חזרה אוטומטית. המלאי, השמות והסטטוסים יישארו.\n\n' +
-    'לפני האיפוס יישמר כאן גיבוי, ותוכלי לשחזר ממנו בכל רגע.',
+    'לפני האיפוס יישמר גיבוי בשרת (עם השם "' + resetByName() + '"), ותוכלי לשחזר ממנו מכל עמדה, בכל רגע.',
     { title: 'אזהרה — איפוס סריקות', danger: true, confirmText: 'כן, אפס הכל', cancelText: 'ביטול' }
   );
   if (!ok) return;
 
-  // snapshot BEFORE wiping (only when there's actually something to back up)
-  if (totalScanned) {
-    const snap = {};
-    for (const k of bcs) snap[k] = merged[k].count || 0;
-    const entry = {
-      id: Date.now(),
-      at: Date.now(),
-      by: (state.session || '').trim() || (state.deviceId || 'לא ידוע'),
-      countId: state.countId || 'main',
-      totalScanned, totalCount,
-      scans: snap,
-      names: Object.assign({}, state.names),
-      statusOverrides: Object.assign({}, state.statusOverrides)
-    };
-    state.resetHistory = state.resetHistory || [];
-    state.resetHistory.unshift(entry);
-    if (state.resetHistory.length > 30) state.resetHistory.length = 30;
+  // Server snapshots to `backups` before wiping. Send who is resetting.
+  let backupId = null;
+  try {
+    const rr = await fetch(cloudBase() + '/api/reset', {
+      method: 'POST', headers: cloudHeaders(),
+      body: JSON.stringify({ count_id: state.countId, by: resetByName() })
+    });
+    const rj = await rr.json().catch(() => ({}));
+    if (!rr.ok) throw new Error(rj.error || ('השרת ענה ' + rr.status));
+    backupId = rj.backup_id || null;
+    if (rj.reset_at) state.lastResetSeen = rj.reset_at;   // don't re-trigger on our own reset
+  } catch (e) {
+    uiAlert('האיפוס לא בוצע — לא הצלחתי להגיע לשרת: ' + e.message + '\nהסריקות נשמרו כפי שהן.', { danger: true, title: 'האיפוס נכשל' });
+    return;   // keep local scans intact if the server (and therefore the backup) failed
   }
 
-  // wipe (local first, then the cloud for every station)
+  // Server wiped + backed up. Now clear locally to match.
   state.scans = {}; state.dirty = {}; state.cloudScans = {}; state.sessionLog = [];
   undoStack.length = 0; redoStack.length = 0; updateUndoRedo();
   save();
-  if (cloudEnabled()) {
-    try {
-      const rr = await fetch(cloudBase() + '/api/reset', {
-        method: 'POST', headers: cloudHeaders(),
-        body: JSON.stringify({ count_id: state.countId })
-      });
-      const rj = await rr.json().catch(() => ({}));
-      if (rj.reset_at) { state.lastResetSeen = rj.reset_at; save(); }   // don't re-trigger on our own reset
-    } catch (e) { uiAlert('האיפוס המקומי בוצע, אך לא הצלחתי לאפס בענן: ' + e.message, { danger: true }); }
-  }
   renderReport(true); renderScanStats(); renderPending(); renderSessionLog(); renderResetHistory();
   const sb = $('#scanBanner');
   if (sb) { sb.className = 'scan-banner'; sb.innerHTML = '<div class="msg muted">מוכן לסריקה…</div>'; }
-  if (totalScanned) uiAlert('הסריקות אופסו. גיבוי נשמר תחת "היסטוריית גיבויים לשחזור".', { title: 'האיפוס הושלם' });
+  uiAlert(backupId
+    ? 'הסריקות אופסו. גיבוי נשמר בשרת תחת "היסטוריית גיבויים לשחזור" — אפשר לשחזר ממנו מכל עמדה.'
+    : 'הסריקות אופסו. (לא היו סריקות לגבות.)', { title: 'האיפוס הושלם' });
 }
 
-async function restoreReset(id) {
-  const entry = (state.resetHistory || []).find(e => String(e.id) === String(id));
-  if (!entry) return;
+async function restoreReset(backup) {
   const ok = await uiConfirm(
-    'לשחזר את הגיבוי מ-' + fmtResetTime(entry.at) + ' (' + esc(entry.by || 'לא ידוע') + ')?\n\n' +
-    (entry.totalScanned || 0).toLocaleString() + ' פאות (' + (entry.totalCount || 0).toLocaleString() + ' סריקות) יוחזרו. ' +
-    'הסריקות הנוכחיות יוחלפו בגיבוי הזה.',
+    'לשחזר את הגיבוי מ-' + fmtResetTime(backup.created_at) + ' (' + (backup.by || 'לא ידוע') + ')?\n\n' +
+    (backup.total_scanned || 0).toLocaleString() + ' פאות (' + (backup.total_count || 0).toLocaleString() + ' סריקות) יוחזרו לכל העמדות. ' +
+    'הסריקות הנוכחיות בספירה יוחלפו בגיבוי הזה.',
     { title: 'שחזור מגיבוי', confirmText: 'שחזר', cancelText: 'ביטול' }
   );
   if (!ok) return;
 
-  const now = Date.now();
-  const scans = {}, dirty = {};
-  for (const bc in entry.scans) {
-    const c = entry.scans[bc] || 0;
-    if (c > 0) { scans[bc] = { count: c, first: now }; dirty[bc] = true; }
+  try {
+    const rr = await fetch(cloudBase() + '/api/restore', {
+      method: 'POST', headers: cloudHeaders(),
+      body: JSON.stringify({ count_id: state.countId, backup_id: backup.id })
+    });
+    const rj = await rr.json().catch(() => ({}));
+    if (!rr.ok) throw new Error(rj.error || ('השרת ענה ' + rr.status));
+    if (rj.reset_at) state.lastResetSeen = rj.reset_at;   // we already know about this generation
+    // clear local then pull the restored totals the server just wrote
+    state.scans = {}; state.dirty = {}; state.cloudScans = {}; state.sessionLog = [];
+    undoStack.length = 0; redoStack.length = 0; updateUndoRedo();
+    save();
+    await pullCloud();
+    renderReport(true); renderScanStats(); renderPending(); renderSessionLog();
+    uiAlert('שוחזרו ' + (rj.restored || backup.total_scanned || 0).toLocaleString() +
+      ' פאות מהגיבוי. הסריקות חזרו לענן ולכל העמדות.', { title: 'השחזור הושלם' });
+  } catch (e) {
+    uiAlert('השחזור נכשל: ' + e.message, { danger: true, title: 'שחזור' });
   }
-  state.scans = scans;
-  state.cloudScans = {};
-  state.dirty = cloudEnabled() ? dirty : {};
-  if (entry.names) state.names = Object.assign({}, state.names, entry.names);
-  if (entry.statusOverrides) state.statusOverrides = Object.assign({}, state.statusOverrides, entry.statusOverrides);
-  undoStack.length = 0; redoStack.length = 0; updateUndoRedo();
-  save();
-  if (cloudEnabled()) schedulePush();   // push the restored counts back to every station
-  renderReport(true); renderScanStats(); renderPending(); renderSessionLog(); renderStatusManager();
-  uiAlert('שוחזרו ' + (entry.totalScanned || 0).toLocaleString() + ' פאות מהגיבוי.' +
-    (cloudEnabled() ? ' הסריקות נשלחות חזרה לענן ולכל העמדות.' : ''), { title: 'השחזור הושלם' });
 }
 
-function renderResetHistory() {
+async function renderResetHistory() {
   const el = $('#resetHistory');
   if (!el) return;
-  const hist = state.resetHistory || [];
-  if (!hist.length) {
-    el.innerHTML = '<p class="muted small" style="margin:0">אין עדיין גיבויים. גיבוי נוצר אוטומטית בכל איפוס.</p>';
+  if (!cloudEnabled()) {
+    el.innerHTML = '<p class="muted small" style="margin:0">היסטוריית הגיבויים נשמרת בשרת וזמינה כשסנכרון הענן דלוק (הגדרות → סנכרון ענן).</p>';
     return;
   }
-  el.innerHTML = '<div class="rh-list">' + hist.map(e => `
-    <div class="rh-row" data-rh-id="${esc(String(e.id))}">
+  el.innerHTML = '<p class="muted small" style="margin:0">טוען גיבויים…</p>';
+  let backups = [];
+  try {
+    const res = await fetchT(cloudBase() + '/api/backups?count_id=' + encodeURIComponent(state.countId));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    backups = data.backups || [];
+  } catch (e) {
+    el.innerHTML = '<p class="small" style="margin:0;color:var(--bad)">לא הצלחתי לטעון גיבויים מהשרת: ' + esc(e.message) + '</p>';
+    return;
+  }
+  if (!backups.length) {
+    el.innerHTML = '<p class="muted small" style="margin:0">אין עדיין גיבויים. גיבוי נוצר אוטומטית בשרת בכל איפוס.</p>';
+    return;
+  }
+  el.innerHTML = '<div class="rh-list">' + backups.map((b, i) => `
+    <div class="rh-row" data-rh-i="${i}">
       <div class="rh-info">
-        <div class="rh-main">${ic('user')} <b>${esc(e.by || 'לא ידוע')}</b> · ${esc(fmtResetTime(e.at))}</div>
-        <div class="rh-sub muted small">${(e.totalScanned || 0).toLocaleString()} פאות · ${(e.totalCount || 0).toLocaleString()} סריקות · ספירה "${esc(e.countId || 'main')}"</div>
+        <div class="rh-main">${ic('user')} <b>${esc(b.by || 'לא ידוע')}</b> · ${esc(fmtResetTime(b.created_at))}</div>
+        <div class="rh-sub muted small">${(b.total_scanned || 0).toLocaleString()} פאות · ${(b.total_count || 0).toLocaleString()} סריקות</div>
       </div>
       <div class="rh-actions">
         <button class="btn secondary small-btn rh-restore">${ic('undo')} שחזר</button>
-        <button class="icon-btn danger rh-del" title="מחק גיבוי">${ic('trash')}</button>
       </div>
     </div>`).join('') + '</div>';
 
   el.querySelectorAll('.rh-row').forEach(row => {
-    const id = row.getAttribute('data-rh-id');
+    const b = backups[+row.getAttribute('data-rh-i')];
     const rb = row.querySelector('.rh-restore');
-    const db = row.querySelector('.rh-del');
-    if (rb) rb.addEventListener('click', () => restoreReset(id));
-    if (db) db.addEventListener('click', async () => {
-      if (!(await uiConfirm('למחוק את נקודת השחזור הזו? לא ניתן יהיה לשחזר ממנה יותר.', { danger: true, confirmText: 'מחק' }))) return;
-      state.resetHistory = (state.resetHistory || []).filter(x => String(x.id) !== String(id));
-      save(); renderResetHistory();
-    });
+    if (rb) rb.addEventListener('click', () => restoreReset(b));
   });
 }
 
