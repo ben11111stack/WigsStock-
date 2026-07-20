@@ -395,6 +395,10 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
 .nav-fab .fab-label { font-size: 10px; font-weight: 600; }
 .nav-fab.active { color: var(--primary); }
 .nav-fab.active .fab-circle { box-shadow: 0 8px 20px color-mix(in oklab, var(--primary) 52%, transparent); }
+/* Long-pressing the scan tab opens the status picker — never a native text-selection menu. */
+.bottomnav button, #scanModeBar { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+/* When scan-to-status mode is active, the FAB turns amber so it's obvious from any tab. */
+.nav-fab.mode-on .fab-circle { background: var(--warn, #f59e0b); box-shadow: 0 0 0 3px color-mix(in oklab, #f59e0b 55%, transparent), 0 6px 15px rgba(245,158,11,.4); }
 
 /* ---------- Icon system ---------- */
 .ic { width: 1.15em; height: 1.15em; display: inline-block; vertical-align: -.18em; flex: none; }

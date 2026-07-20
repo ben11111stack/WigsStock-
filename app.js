@@ -790,13 +790,17 @@ function setScanStatusMode(status) {
 }
 function renderScanModeBar() {
   const bar = document.getElementById('scanModeBar');
+  // amber FAB from any tab whenever a special scan mode is on
+  const fab = document.getElementById('tab-scan');
+  if (fab) fab.classList.toggle('mode-on', !!scanStatusMode);
   if (!bar) return;
   if (!scanStatusMode) { bar.className = 'hidden'; bar.style.cssText = ''; bar.innerHTML = ''; return; }
   bar.className = '';
-  bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0;' +
-    'padding:10px 12px;border-radius:12px;background:#2563eb;color:#fff;font-weight:700;';
-  bar.innerHTML = '<span>' + ic('edit') + ' מצב סימון: <b>' + esc(statusLabel(scanStatusMode)) + '</b></span>' +
-    '<button class="btn ghost small-btn" id="scanModeOff" style="background:#fff;color:#2563eb">סיום</button>';
+  bar.style.cssText = 'position:sticky;top:6px;z-index:20;display:flex;align-items:center;justify-content:space-between;' +
+    'gap:10px;margin:8px 0;padding:11px 13px;border-radius:12px;background:#f59e0b;color:#111;font-weight:800;' +
+    'box-shadow:0 4px 14px rgba(245,158,11,.5)';
+  bar.innerHTML = '<span>' + ic('edit') + ' מצב סריקה מיוחד — כל פאה מסומנת כ־<b>' + esc(statusLabel(scanStatusMode)) + '</b></span>' +
+    '<button class="btn small-btn" id="scanModeOff" style="background:#111;color:#fff;flex:none">סיום</button>';
   const off = document.getElementById('scanModeOff');
   if (off) off.onclick = () => setScanStatusMode(null);
 }
@@ -830,7 +834,12 @@ function openScanStatusPicker() {
 function attachLongPress(el, fn) {
   if (!el) return;
   let timer = null, fired = false;
-  const start = () => { fired = false; timer = setTimeout(() => { fired = true; fn(); }, 550); };
+  const start = () => { fired = false; timer = setTimeout(() => {
+    fired = true;
+    // a long press can start a native text selection — clear it so no Copy/Select-all menu shows
+    try { const s = window.getSelection(); if (s) s.removeAllRanges(); } catch (e) {}
+    fn();
+  }, 550); };
   const cancel = () => { clearTimeout(timer); };
   el.addEventListener('touchstart', start, { passive: true });
   el.addEventListener('touchend', cancel);
