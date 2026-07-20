@@ -2363,11 +2363,16 @@ function init() {
     if (document.hidden) {
       if (cameraOn) { cameraResumeOnVisible = true; stopCamera(); }
       closeLookupScan();   // never keep the lookup camera busy in the background
-    } else if (cameraResumeOnVisible) {
-      cameraResumeOnVisible = false;
-      if (document.querySelector('#panel-scan.active')) ensureCamera();
+    } else {
+      onForeground();      // a resumed PWA re-pulls the sheet/cloud so numbers aren't stale
+      if (cameraResumeOnVisible) {
+        cameraResumeOnVisible = false;
+        if (document.querySelector('#panel-scan.active')) ensureCamera();
+      }
     }
   });
+  // bfcache restore (back/forward, some PWA resumes) doesn't re-run init — refresh here too
+  window.addEventListener('pageshow', onForeground);
   window.addEventListener('pagehide', () => { if (cameraOn) stopCamera(); closeLookupScan(); });
   // Desktop: switching to another window or app fires window 'blur' but usually
   // NOT 'visibilitychange' (the tab is still "visible"), so the camera would stay
@@ -2378,6 +2383,7 @@ function init() {
     closeLookupScan();
   });
   window.addEventListener('focus', () => {
+    onForeground();
     if (cameraResumeOnVisible && !document.hidden) {
       cameraResumeOnVisible = false;
       if (document.querySelector('#panel-scan.active')) ensureCamera();
@@ -3012,6 +3018,22 @@ function handleImport(text) {
 }
 
 // Load the inventory from a shared Google Sheet, proxied through the Worker.
+// Re-sync when the app returns to the foreground (PWA resume, tab refocus,
+// bfcache restore). Without this, a page frozen for hours keeps showing a
+// weeks-old catalog/count until a manual refresh — the "stale numbers on open"
+// bug — because loadFromSheet otherwise runs only on a full page load, and the
+// background poll then re-saves that stale in-memory catalog. Throttled so
+// rapid focus/blur flips don't spam the network.
+let lastForegroundSync = 0;
+function onForeground() {
+  if (typeof document !== 'undefined' && document.hidden) return;
+  const now = Date.now();
+  if (now - lastForegroundSync < 4000) return;
+  lastForegroundSync = now;
+  if (cloudEnabled()) pullCloud();
+  if (state.sheetUrl) loadFromSheet(false);
+}
+
 async function loadFromSheet(alertOnError) {
   const note = $('#sheetNote');
   const setNote = (color, txt) => { if (note) { note.style.color = color; note.textContent = txt; } };

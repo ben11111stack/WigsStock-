@@ -17,11 +17,12 @@ const app = fs.readFileSync('app.js', 'utf8');
  * in the injected code are treated as escape sequences (app.js's `const $$`
  * silently became `const $` and broke the whole single-file build). */
 html = html
-  .replace('<link rel="stylesheet" href="styles.css">', () => '<style>\n' + css + '\n</style>')
+  // tolerate an optional ?v=NN cache-busting query on the core assets
+  .replace(/<link rel="stylesheet" href="styles\.css[^"]*">/, () => '<style>\n' + css + '\n</style>')
   .replace('<script src="zxing-wasm.min.js"></script>',
     () => '<script>window.__ZXING_WASM_B64 = "' + wasmB64 + '";</script>\n<script>\n' + zxingWasmJs + '\n</script>')
   .replace('<script src="zxing.min.js"></script>', () => '<script>\n' + zxing + '\n</script>')
-  .replace('<script src="app.js"></script>', () => '<script>\n' + app + '\n</script>');
+  .replace(/<script src="app\.js[^"]*"><\/script>/, () => '<script>\n' + app + '\n</script>');
 
 fs.writeFileSync('wigsstock-app.html', html);
 console.log('Wrote wigsstock-app.html (' + Math.round(html.length / 1024) + ' KB)');
