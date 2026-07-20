@@ -119,11 +119,14 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.17.6';
+const APP_VERSION = '1.17.7';
 // NOTE: this changelog is visible to EVERY station (Settings → גרסאות). Keep the
 // notes generic — never describe the permissions / manager / block / user-
 // management system here, or regular stations learn it exists.
 const CHANGELOG = [
+  { v: '1.17.7', notes: [
+    'שינויי סטטוס ושמות שנערכו באפליקציה נכתבים עכשיו לשיטס אוטומטית (עמודת "סטטוס (עודכן)") — בלי צורך בלחיצה ידנית על "כתיבה לשיטס"'
+  ] },
   { v: '1.17.6', notes: [
     'כל השעות באפליקציה מוצגות עכשיו לפי שעון החנות (ישראל) — גם במכשיר שנמצא בחו"ל'
   ] },
@@ -3256,7 +3259,7 @@ function writebackFields() {
   const add = (bc, k, v) => { if (v) { (fields[bc] = fields[bc] || {})[k] = v; } };
   for (const bc in state.names) add(bc, 'name', state.names[bc]);
   for (const bc in state.invNames) if (!(fields[bc] && fields[bc].name)) add(bc, 'name', state.invNames[bc]);
-  for (const bc in state.statusOverrides) add(bc, 'status', state.statusOverrides[bc]);
+  for (const bc in state.statusOverrides) add(bc, 'status', statusLabel(state.statusOverrides[bc]));
   return fields;
 }
 
