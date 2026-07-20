@@ -1282,11 +1282,15 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.17.3';
+const APP_VERSION = '1.17.4';
 // NOTE: this changelog is visible to EVERY station (Settings → גרסאות). Keep the
 // notes generic — never describe the permissions / manager / block / user-
 // management system here, or regular stations learn it exists.
 const CHANGELOG = [
+  { v: '1.17.4', notes: [
+    'שינויי הסטטוס מוצגים עכשיו גם בדוח — כולל מי שינה, מתי, מאיזה סטטוס ולאיזה',
+    'בייצוא ובדוח: הקשה על ברקוד פותחת את כרטיס הפאה — גם בתצוגת שינויי הסטטוס'
+  ] },
   { v: '1.17.3', notes: [
     'ברקוד לא מוכר (חלון קופץ): הסריקה כבר לא נשמרת אוטומטית — היא נשמרת רק אחרי אישור "שמור בכל זאת"',
     'כשהחלון פתוח הסריקה מושהית — תזוזה של המצלמה כבר לא מעלימה את החלון או שומרת סריקות ברקע'
@@ -1446,6 +1450,7 @@ const state = {
   names: {},         // barcode -> wig name typed in the app (local, wins over the sheet)
   invNames: {},      // barcode -> wig name read from the sheet's name column (if any)
   statusOverrides: {}, // barcode -> status changed from the wig card (survives sheet reload)
+  statusMeta: {},    // barcode -> { by, at }  (who changed the status from the app, and when)
   statusVocab: null, // user-edited status vocabulary ([{key,label,inStore}]); null = defaults
   statusSchemaV: 0,  // local marker: has the one-time status-dedup migration run? (see migrateStatuses)
   logoAnim: true,    // constant motion of the small header logo (splash always plays regardless)
@@ -1997,10 +2002,19 @@ function unknownFlash(code) {
  * touched) while still counting in the inventory count. Device-local and
  * transient: it resets on a full reload so it can't linger by accident. */
 let scanStatusMode = null;
+// Track who changed a wig's status from the app and when — shown in the report
+// and the "שינויי סטטוס" export so a marking session is fully auditable.
+function stampStatusMeta(bc, removed) {
+  state.statusMeta = state.statusMeta || {};
+  if (removed) delete state.statusMeta[bc];
+  else state.statusMeta[bc] = { by: (state.session || '').trim() || deviceId(), at: Date.now() };
+}
 function applyScanStatusOverride(bc, status) {
   state.statusOverrides = state.statusOverrides || {};
-  if (state.inventory[bc] === status) delete state.statusOverrides[bc];  // matches the sheet → no override
+  const removed = state.inventory[bc] === status;
+  if (removed) delete state.statusOverrides[bc];  // matches the sheet → no override
   else state.statusOverrides[bc] = status;
+  stampStatusMeta(bc, removed);
 }
 function setScanStatusMode(status) {
   scanStatusMode = status || null;
@@ -2560,6 +2574,28 @@ function statusSummaryText(list) {
   return rows.map(([st, n]) => `${statusLabel(st)}: ${n.toLocaleString()}`).join(' · ');
 }
 
+// In-app status changes (wig card / scan-to-status), fully attributed: which
+// wig, from what, to what, by whom and when. Every cell links to the wig card.
+function statusChangesTable() {
+  const ov = state.statusOverrides || {}, meta = state.statusMeta || {};
+  const keys = Object.keys(ov).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  if (!keys.length) return '<p class="muted small">לא בוצעו שינויי סטטוס מהאפליקציה.</p>';
+  const p2 = (n) => String(n).padStart(2, '0');
+  const fmtAt = (t) => { if (!t) return '—'; const d = new Date(t); return `${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+  const rows = keys.map(bc => {
+    const m = meta[bc] || {};
+    const nm = wigName(bc);
+    return '<tr>' +
+      `<td><span class="bc-link name-cell" data-wig="${esc(bc)}">${nm ? esc(nm) : '<span class="muted">פאה</span>'}</span></td>` +
+      `<td><b class="bc-link" data-wig="${esc(bc)}">${esc(bc)}</b></td>` +
+      `<td><span class="tag other">${esc(statusLabel(state.inventory[bc] || ''))}</span></td>` +
+      `<td><span class="tag ${isInStore(ov[bc]) ? 'instock' : 'other'}">${esc(statusLabel(ov[bc]))}</span></td>` +
+      `<td>${m.by ? esc(m.by) : '<span class="muted">—</span>'}</td>` +
+      `<td class="muted small">${fmtAt(m.at)}</td></tr>`;
+  }).join('');
+  return `<div class="scroll"><table><thead><tr><th>שם</th><th>ברקוד</th><th>מסטטוס</th><th>לסטטוס</th><th>מי</th><th>מתי</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
 let reportQuery = '';
 
 // Scans attributed per station, from the cloud's per-barcode station list.
@@ -2737,8 +2773,10 @@ function setWigName(bc, name) {
 // the sheet's own value again, the override is dropped so nothing lingers.
 function setWigStatus(bc, status) {
   state.statusOverrides = state.statusOverrides || {};
-  if (state.inventory[bc] === status) delete state.statusOverrides[bc];
+  const removed = state.inventory[bc] === status;
+  if (removed) delete state.statusOverrides[bc];
   else state.statusOverrides[bc] = status;
+  stampStatusMeta(bc, removed);
   save();
   renderProductCard();                 // verdict + "בחנות" reflect the new status
   renderReport(true); renderScanStats(); renderInventoryStatus();
@@ -2783,9 +2821,13 @@ function lookupCard(query) {
 // mid-scroll. Local edits (name/status) pass force=true to always repaint.
 let reportSig = null;
 function reportSignature(r, q) {
+  const meta = state.statusMeta || {};
+  let lastChange = 0;
+  for (const bc in meta) if (meta[bc] && meta[bc].at > lastChange) lastChange = meta[bc].at;
   return JSON.stringify([q, r.totalInventory, r.totalScanned, r.ok.length, r.missing.length,
     r.foundOther.length, r.unknown.length, r.duplicates.length, r.expectedInStock,
-    state.cloudDevices || 0, Object.keys(state.cloudDetail || {}).length]);
+    state.cloudDevices || 0, Object.keys(state.cloudDetail || {}).length,
+    Object.keys(state.statusOverrides || {}).length, lastChange]);
 }
 
 function renderReport(force) {
@@ -2873,6 +2915,9 @@ function renderReport(force) {
 
     <div id="acc-dup">${accCard(ic('copy', 'dup') + ' כפילויות', r.duplicates.length, '',
       tableFor(fDup, [nameCol, bcCol, countCol]), openIf(fDup.length))}</div>
+
+    <div id="acc-changes">${accCard(ic('edit', 'warn') + ' שינויי סטטוס', Object.keys(state.statusOverrides || {}).length,
+      '', statusChangesTable())}</div>
 
     <div id="acc-ok">${accCard(ic('check', 'ok') + ' תקין', r.ok.length, '',
       tableFor(fOk, [nameCol, bcCol, statusCol, stationCol, delCol]), openIf(fOk.length))}</div>
@@ -2982,10 +3027,15 @@ function dataMissingBreakdown() {
 // manager sees exactly what was done. Only true changes appear here: an
 // override matching the sheet's own value is dropped at the source.
 function dataStatusChanges() {
-  const rows = [['barcode', 'name', 'original_status', 'new_status']];
-  const ov = state.statusOverrides || {};
-  Object.keys(ov).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(bc =>
-    rows.push([bc, wigName(bc), statusLabel(state.inventory[bc] || ''), statusLabel(ov[bc])]));
+  const rows = [['barcode', 'name', 'original_status', 'new_status', 'changed_by', 'changed_at']];
+  const ov = state.statusOverrides || {}, meta = state.statusMeta || {};
+  const p2 = (n) => String(n).padStart(2, '0');
+  Object.keys(ov).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(bc => {
+    const m = meta[bc] || {};
+    const at = m.at ? new Date(m.at) : null;
+    rows.push([bc, wigName(bc), statusLabel(state.inventory[bc] || ''), statusLabel(ov[bc]),
+      m.by || '', at ? `${p2(at.getDate())}/${p2(at.getMonth() + 1)}/${at.getFullYear()} ${p2(at.getHours())}:${p2(at.getMinutes())}` : '']);
+  });
   return rows;
 }
 function dataUpdates() {
@@ -3129,8 +3179,11 @@ function renderExportPreview() {
   if (!Object.keys(state.inventory).length) { el.innerHTML = ''; return; }
   const tbl = (rows) => {
     if (rows.length < 2) return '<p class="muted small">אין נתונים.</p>';
+    // barcode column links to the wig card (the document-level [data-wig] handler)
+    const bcCol = /barcode|ברקוד/i.test(String(rows[0][0] || '')) ? 0 : -1;
     const head = rows[0].map(h => `<th>${esc(h)}</th>`).join('');
-    const body = rows.slice(1, 401).map(r => '<tr>' + r.map(c => `<td>${esc(c)}</td>`).join('') + '</tr>').join('');
+    const body = rows.slice(1, 401).map(r => '<tr>' + r.map((c, i) =>
+      `<td>${i === bcCol && c !== '' ? `<b class="bc-link" data-wig="${esc(c)}">${esc(c)}</b>` : esc(c)}</td>`).join('') + '</tr>').join('');
     const more = rows.length > 401 ? `<p class="muted small">מוצגות 400 מתוך ${(rows.length - 1).toLocaleString()}.</p>` : '';
     return `<div class="scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
   };
@@ -3197,7 +3250,7 @@ function deviceId() { return (state.session && state.session.trim()) || state.de
  * by timestamp. */
 const SERVER_SETTINGS_KEYS = [
   'accent', 'dark', 'sound', 'logoAnim', 'defaultTab', 'batchMode',
-  'names', 'statusOverrides', 'statusVocab'
+  'names', 'statusOverrides', 'statusMeta', 'statusVocab'
 ];
 function collectSettings() {
   const o = {};
