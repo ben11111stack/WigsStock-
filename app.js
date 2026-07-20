@@ -1183,6 +1183,25 @@ function statusBreakdownTable() {
   return `<div class="scroll"><table><thead><tr><th>סטטוס</th><th>סה"כ</th><th>נסרקו</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+// Count a reconciliation list (missing / foundOther / …) by each item's original
+// status, so a manager sees at a glance where the wigs came from. Returns
+// [[status, count], …] sorted most-common first.
+function statusSummaryOf(list) {
+  const by = {};
+  for (const i of list) {
+    const st = i.status != null ? i.status : statusOf(i.barcode);
+    by[st] = (by[st] || 0) + 1;
+  }
+  return Object.entries(by).sort((a, b) => b[1] - a[1]);
+}
+// One-line summary for an accordion sub-title, e.g. "In Stock: 129 · Consignment: 62".
+// Empty when a single status carries the whole list (the split would add nothing).
+function statusSummaryText(list) {
+  const rows = statusSummaryOf(list);
+  if (rows.length < 2) return '';
+  return rows.map(([st, n]) => `${statusLabel(st)}: ${n.toLocaleString()}`).join(' · ');
+}
+
 let reportQuery = '';
 
 // Scans attributed per station, from the cloud's per-barcode station list.
@@ -1486,10 +1505,10 @@ function renderReport(force) {
     </div>
 
     <div id="acc-other">${accCard(ic('alert', 'warn') + ' בחנות אך מסומן אחרת', r.foundOther.length,
-      '', tableFor(fOther, [nameCol, bcCol, statusCol, stationCol, delCol]), openIf(fOther.length))}</div>
+      statusSummaryText(fOther), tableFor(fOther, [nameCol, bcCol, statusCol, stationCol, delCol]), openIf(fOther.length))}</div>
 
     <div id="acc-missing">${accCard(ic('x', 'bad') + ' חסרות', r.missing.length,
-      '', tableFor(fMissing, [nameCol, bcCol, statusCol]), openIf(fMissing.length))}</div>
+      statusSummaryText(fMissing), tableFor(fMissing, [nameCol, bcCol, statusCol]), openIf(fMissing.length))}</div>
 
     <div id="acc-unknown">${accCard(ic('help', 'unknown') + ' ברקודים לא מוכרים', r.unknown.length,
       '', tableFor(fUnknown, [nameCol, bcCol, countCol, stationCol, delCol]), openIf(fUnknown.length))}</div>
@@ -1586,6 +1605,18 @@ function dataReconciliation() {
   push(r.missing, 'missing');
   push(r.unknown, 'unknown-barcode');
   push(r.ok, 'ok');
+  return rows;
+}
+// Summary tab: how many missing / flagged wigs came from each original status
+// (e.g. missing → In Stock 129, Consignment 62). Managers use this to tell a
+// real disappearance (In Stock) from an expected absence (Consignment out).
+function dataMissingBreakdown() {
+  const r = reconcile();
+  const rows = [['category', 'status', 'count']];
+  const add = (list, cat) => statusSummaryOf(list).forEach(([st, n]) =>
+    rows.push([cat, statusLabel(st), n]));
+  add(r.missing, 'missing');
+  add(r.foundOther, 'in-store-but-flagged');
   return rows;
 }
 function dataUpdates() {
@@ -1698,11 +1729,12 @@ function downloadXlsx(filename, sheets) {
 // all" workbook, the per-category export, and the in-app preview.
 const EXPORT_SHEETS = {
   recon:    { icon: 'file',    title: 'דוח התאמה',     build: dataReconciliation },
+  summary:  { icon: 'bars',    title: 'פילוח חסרים',   build: dataMissingBreakdown },
   updates:  { icon: 'edit',    title: 'עדכוני סטטוס',  build: dataUpdates },
   stations: { icon: 'users',   title: 'פילוח לפי עמדה', build: dataStations },
   scans:    { icon: 'archive', title: 'סריקות גולמיות', build: dataScans }
 };
-const EXPORT_ORDER = ['recon', 'updates', 'stations', 'scans'];
+const EXPORT_ORDER = ['recon', 'summary', 'updates', 'stations', 'scans'];
 
 // One Excel workbook with every report as its own tab.
 function exportExcel() {
