@@ -119,11 +119,15 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.17.1';
+const APP_VERSION = '1.17.2';
 // NOTE: this changelog is visible to EVERY station (Settings → גרסאות). Keep the
 // notes generic — never describe the permissions / manager / block / user-
 // management system here, or regular stations learn it exists.
 const CHANGELOG = [
+  { v: '1.17.2', notes: [
+    'גיליון חדש בייצוא — "שינויי סטטוס": כל הפאות שסומנו בסטטוס אחר מהאפליקציה, עם הסטטוס המקורי מהשיטס לצד החדש',
+    'גיליון "עדכוני סטטוס" כבר לא מציע להחזיר למלאי פאות שסומנו בכוונה בסטטוס אחר'
+  ] },
   { v: '1.17.1', notes: [
     'תיקון: לחיצה ארוכה על כפתור הסריקה (לבחירת מצב סטטוס) כבר לא פותחת בטעות את תפריט בחירת-הטקסט של המערכת — התפריט נפתח בשחרור האצבע'
   ] },
@@ -1768,10 +1772,25 @@ function dataMissingBreakdown() {
   add(r.foundOther, 'in-store-but-flagged');
   return rows;
 }
+// Audit tab: every wig whose status was changed from the app (wig card or
+// scan-to-status mode) — original sheet value next to the new one, so the
+// manager sees exactly what was done. Only true changes appear here: an
+// override matching the sheet's own value is dropped at the source.
+function dataStatusChanges() {
+  const rows = [['barcode', 'name', 'original_status', 'new_status']];
+  const ov = state.statusOverrides || {};
+  Object.keys(ov).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(bc =>
+    rows.push([bc, wigName(bc), statusLabel(state.inventory[bc] || ''), statusLabel(ov[bc])]));
+  return rows;
+}
 function dataUpdates() {
   const r = reconcile();
+  const ov = state.statusOverrides || {};
   const rows = [['barcode', 'name', 'current_status', 'suggested_status', 'reason']];
-  r.foundOther.forEach(i => rows.push([i.barcode, wigName(i.barcode), i.status, IN_STOCK, 'נסרק בחנות']));
+  // Deliberate in-app changes (scan-to-status / wig card) are the manager's own
+  // decision — never suggest reverting those back to in-stock.
+  r.foundOther.filter(i => !(i.barcode in ov))
+    .forEach(i => rows.push([i.barcode, wigName(i.barcode), i.status, IN_STOCK, 'נסרק בחנות']));
   r.missing.forEach(i => rows.push([i.barcode, wigName(i.barcode), IN_STOCK, 'missing', 'רשום in-stock אך לא נסרק']));
   return rows;
 }
@@ -1879,11 +1898,12 @@ function downloadXlsx(filename, sheets) {
 const EXPORT_SHEETS = {
   recon:    { icon: 'file',    title: 'דוח התאמה',     build: dataReconciliation },
   summary:  { icon: 'bars',    title: 'פילוח חסרים',   build: dataMissingBreakdown },
+  changes:  { icon: 'edit',    title: 'שינויי סטטוס',  build: dataStatusChanges },
   updates:  { icon: 'edit',    title: 'עדכוני סטטוס',  build: dataUpdates },
   stations: { icon: 'users',   title: 'פילוח לפי עמדה', build: dataStations },
   scans:    { icon: 'archive', title: 'סריקות גולמיות', build: dataScans }
 };
-const EXPORT_ORDER = ['recon', 'summary', 'updates', 'stations', 'scans'];
+const EXPORT_ORDER = ['recon', 'summary', 'changes', 'updates', 'stations', 'scans'];
 
 // One Excel workbook with every report as its own tab.
 function exportExcel() {
