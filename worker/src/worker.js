@@ -163,22 +163,39 @@ async function aggregateScans(env, countId) {
   return scans;
 }
 
+// Build the editable per-wig fields (in-app names + status changes) from the
+// count's synced settings blob, so the AUTOMATIC write-back carries them too —
+// not only the manual button. Status keys map to their vocab labels when known
+// (e.g. 'sold' → 'Sold'), matching the style of the sheet's own status column.
+function fieldsFromSettings(settingsJson) {
+  try {
+    const s = JSON.parse(settingsJson || '{}');
+    const vocab = Array.isArray(s.statusVocab) ? s.statusVocab : [];
+    const label = (k) => { const m = vocab.find((x) => x && x.key === k); return (m && m.label) || k; };
+    const fields = {};
+    const add = (bc, k, v) => { if (v) (fields[bc] = fields[bc] || {})[k] = v; };
+    for (const bc in (s.names || {})) add(bc, 'name', String(s.names[bc]));
+    for (const bc in (s.statusOverrides || {})) add(bc, 'status', label(String(s.statusOverrides[bc])));
+    return fields;
+  } catch (e) { return {}; }
+}
+
 // Fast, throttled write-back triggered right after new scans arrive, so the
 // sheet updates within a few seconds instead of waiting for the cron.
 async function maybeWriteback(env, countId) {
   try {
-    const m = await env.DB.prepare(`SELECT script_url, last_written FROM meta WHERE count_id = ?1`).bind(countId).first();
+    const m = await env.DB.prepare(`SELECT script_url, last_written, settings FROM meta WHERE count_id = ?1`).bind(countId).first();
     if (!m || !m.script_url) return;
     const now = Date.now();
     if (m.last_written && now - m.last_written < 5000) return;   // at most one write / 5s
     await env.DB.prepare(`UPDATE meta SET last_written = ?2 WHERE count_id = ?1`).bind(countId, now).run();
-    await doWriteback(env, countId, m.script_url);
+    await doWriteback(env, countId, m.script_url, fieldsFromSettings(m.settings));
   } catch (e) { /* cron will catch up */ }
 }
 
 // Push a count's results to the owner's Apps Script web app. `fields` carries
-// editable per-wig values (name/status) supplied by the writing device on a
-// manual write-back; the cron/auto path sends scans only.
+// editable per-wig values (name/status) — from the writing device on a manual
+// write-back, or derived from the synced settings on the auto path.
 async function doWriteback(env, countId, scriptUrl, fields) {
   const scans = await aggregateScans(env, countId);
   const body = { scans };
@@ -575,13 +592,16 @@ export default {
     try {
       await ensureSchema(env);
       const { results } = await env.DB
-        .prepare(`SELECT count_id, script_url, last_written FROM meta WHERE script_url IS NOT NULL AND script_url != ''`)
+        .prepare(`SELECT count_id, script_url, last_written, settings, settings_at FROM meta WHERE script_url IS NOT NULL AND script_url != ''`)
         .all();
       for (const m of results) {
         const mx = await env.DB.prepare(`SELECT MAX(updated_at) AS mx FROM scans WHERE count_id = ?1`).bind(m.count_id).first();
-        if (!mx || !mx.mx) continue;
-        if (m.last_written && mx.mx <= m.last_written) continue;   // nothing new since last write
-        const res = await doWriteback(env, m.count_id, m.script_url);
+        // a settings change (status/name edited in the app) must trigger a
+        // write too — not only new scans
+        const newest = Math.max((mx && mx.mx) || 0, m.settings_at || 0);
+        if (!newest) continue;
+        if (m.last_written && newest <= m.last_written) continue;   // nothing new since last write
+        const res = await doWriteback(env, m.count_id, m.script_url, fieldsFromSettings(m.settings));
         if (res && res.ok) {
           await env.DB.prepare(`UPDATE meta SET last_written = ?2 WHERE count_id = ?1`).bind(m.count_id, Date.now()).run();
         }
