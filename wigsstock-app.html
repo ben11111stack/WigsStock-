@@ -1282,11 +1282,14 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.17.5';
+const APP_VERSION = '1.17.6';
 // NOTE: this changelog is visible to EVERY station (Settings → גרסאות). Keep the
 // notes generic — never describe the permissions / manager / block / user-
 // management system here, or regular stations learn it exists.
 const CHANGELOG = [
+  { v: '1.17.6', notes: [
+    'כל השעות באפליקציה מוצגות עכשיו לפי שעון החנות (ישראל) — גם במכשיר שנמצא בחו"ל'
+  ] },
   { v: '1.17.5', notes: [
     'שעת הסריקה מוצגת עכשיו בכל מקום: עמודת "שעה" בטבלאות הדוח (תקין / מסומן אחרת / לא מוכר), שדה "שעת סריקה" בכרטיס הפאה, ועמודות זמן בקבצי הייצוא'
   ] },
@@ -2578,10 +2581,24 @@ function statusSummaryText(list) {
 }
 
 // dd/MM HH:mm for timestamps shown in the report / wig card / exports.
+// Always the STORE's clock (Israel), not the viewing device's — a manager
+// abroad must see the same times the workers on the floor saw.
+const STORE_TZ = 'Asia/Jerusalem';
 function fmtDayTime(t) {
   if (!t) return '';
-  const d = new Date(t), p = (n) => String(n).padStart(2, '0');
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  try {
+    return new Intl.DateTimeFormat('en-GB', { timeZone: STORE_TZ, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(t)).replace(',', '');
+  } catch (e) {
+    const d = new Date(t), p = (n) => String(n).padStart(2, '0');
+    return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+}
+// Same, with the year — for exports.
+function fmtFullDayTime(t) {
+  if (!t) return '';
+  try {
+    return new Intl.DateTimeFormat('en-GB', { timeZone: STORE_TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(t)).replace(',', '');
+  } catch (e) { return fmtDayTime(t); }
 }
 // When was a barcode last scanned — cloud detail first (all stations), then
 // this device's own record as a fallback.
@@ -2596,8 +2613,7 @@ function statusChangesTable() {
   const ov = state.statusOverrides || {}, meta = state.statusMeta || {};
   const keys = Object.keys(ov).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   if (!keys.length) return '<p class="muted small">לא בוצעו שינויי סטטוס מהאפליקציה.</p>';
-  const p2 = (n) => String(n).padStart(2, '0');
-  const fmtAt = (t) => { if (!t) return '—'; const d = new Date(t); return `${p2(d.getDate())}/${p2(d.getMonth() + 1)} ${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+  const fmtAt = (t) => t ? fmtDayTime(t) : '—';
   const rows = keys.map(bc => {
     const m = meta[bc] || {};
     const nm = wigName(bc);
@@ -3050,12 +3066,10 @@ function dataMissingBreakdown() {
 function dataStatusChanges() {
   const rows = [['barcode', 'name', 'original_status', 'new_status', 'changed_by', 'changed_at']];
   const ov = state.statusOverrides || {}, meta = state.statusMeta || {};
-  const p2 = (n) => String(n).padStart(2, '0');
   Object.keys(ov).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(bc => {
     const m = meta[bc] || {};
-    const at = m.at ? new Date(m.at) : null;
     rows.push([bc, wigName(bc), statusLabel(state.inventory[bc] || ''), statusLabel(ov[bc]),
-      m.by || '', at ? `${p2(at.getDate())}/${p2(at.getMonth() + 1)}/${at.getFullYear()} ${p2(at.getHours())}:${p2(at.getMinutes())}` : '']);
+      m.by || '', m.at ? fmtFullDayTime(m.at) : '']);
   });
   return rows;
 }
