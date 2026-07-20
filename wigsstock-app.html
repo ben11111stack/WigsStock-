@@ -415,6 +415,11 @@ td b { font-family: ui-monospace, monospace; font-weight: 600; letter-spacing: .
 .nav-fab.active .fab-circle { box-shadow: 0 8px 20px color-mix(in oklab, var(--primary) 52%, transparent); }
 /* Long-pressing the scan tab opens the status picker — never a native text-selection menu. */
 .bottomnav button, #scanModeBar { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+/* Dialogs must never be text-selectable (a long-press that opens one under the
+   finger would otherwise trigger Android's Copy/Select-all menu) — but keep
+   their inputs editable/selectable. */
+.ui-dialog, .ui-dialog .dlg-card { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.ui-dialog input, .ui-dialog textarea { -webkit-user-select: text; user-select: text; }
 /* When scan-to-status mode is active, the FAB turns amber so it's obvious from any tab. */
 .nav-fab.mode-on .fab-circle { background: var(--warn, #f59e0b); box-shadow: 0 0 0 3px color-mix(in oklab, #f59e0b 55%, transparent), 0 6px 15px rgba(245,158,11,.4); }
 
@@ -1277,11 +1282,14 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.17.0';
+const APP_VERSION = '1.17.1';
 // NOTE: this changelog is visible to EVERY station (Settings → גרסאות). Keep the
 // notes generic — never describe the permissions / manager / block / user-
 // management system here, or regular stations learn it exists.
 const CHANGELOG = [
+  { v: '1.17.1', notes: [
+    'תיקון: לחיצה ארוכה על כפתור הסריקה (לבחירת מצב סטטוס) כבר לא פותחת בטעות את תפריט בחירת-הטקסט של המערכת — התפריט נפתח בשחרור האצבע'
+  ] },
   { v: '1.17.0', notes: [
     'התראה על סריקת ברקוד לא מוכר — בהגדרות → התנהגות אפשר לבחור בין חלון קופץ (עם מחיקת הסריקה) לבין הבזק + צליל',
     'מצב "סריקה לפי סטטוס": לחיצה ארוכה על כפתור הסריקה מסמנת כל פאה שנסרקת בסטטוס שנבחר (בנוסף לספירה, בלי לגעת בסטטוס המקורי). פס כתום מראה שהמצב פעיל',
@@ -1998,21 +2006,31 @@ function openScanStatusPicker() {
 // so long-pressing the scan tab opens the picker instead of navigating.
 function attachLongPress(el, fn) {
   if (!el) return;
-  let timer = null, fired = false;
-  const start = () => { fired = false; timer = setTimeout(() => {
-    fired = true;
-    // a long press can start a native text selection — clear it so no Copy/Select-all menu shows
+  let timer = null, longReady = false, suppressClick = false;
+  const begin = () => {
+    suppressClick = false; longReady = false;
+    timer = setTimeout(() => { longReady = true; if (navigator.vibrate) navigator.vibrate(15); }, 500);
+  };
+  // Open the menu on RELEASE, not while the finger is still down — otherwise the
+  // dialog appears under the held finger and Android turns it into a text
+  // selection (the Copy / Select-all menu). Clearing any stray selection too.
+  const finish = () => {
+    clearTimeout(timer);
+    if (!longReady) return;
+    longReady = false; suppressClick = true;
     try { const s = window.getSelection(); if (s) s.removeAllRanges(); } catch (e) {}
     fn();
-  }, 550); };
-  const cancel = () => { clearTimeout(timer); };
-  el.addEventListener('touchstart', start, { passive: true });
-  el.addEventListener('touchend', cancel);
+  };
+  const cancel = () => { clearTimeout(timer); longReady = false; };
+  el.addEventListener('touchstart', begin, { passive: true });
+  el.addEventListener('touchend', finish);
   el.addEventListener('touchmove', cancel, { passive: true });
-  el.addEventListener('mousedown', start);
-  el.addEventListener('mouseup', cancel);
+  el.addEventListener('touchcancel', cancel);
+  el.addEventListener('mousedown', begin);
+  el.addEventListener('mouseup', finish);
   el.addEventListener('mouseleave', cancel);
-  el.addEventListener('click', (e) => { if (fired) { e.preventDefault(); e.stopPropagation(); fired = false; } }, true);
+  // swallow the click that a touchend/mouseup synthesizes right after a long-press
+  el.addEventListener('click', (e) => { if (suppressClick) { e.preventDefault(); e.stopPropagation(); suppressClick = false; } }, true);
 }
 function renderUnknownAlert() {
   const wrap = $('#unknownAlertPicker');
