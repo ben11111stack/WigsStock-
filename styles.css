@@ -478,6 +478,8 @@ td .ic { width: 15px; height: 15px; }
   cursor: pointer; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sound-opt:active, .seg-opt:active { transform: scale(.96); }
 .sound-opt.active, .seg-opt.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+/* Pickers with fewer than 5 options: give each option room so its label isn't clipped. */
+#unknownAlertPicker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 /* ---------- Tappable barcode + wig product card ---------- */
 .bc-link { cursor: pointer; border-bottom: 1px dashed color-mix(in oklab, var(--primary) 45%, var(--line)); }

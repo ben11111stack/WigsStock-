@@ -119,11 +119,18 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.16.4';
+const APP_VERSION = '1.17.0';
 // NOTE: this changelog is visible to EVERY station (Settings → גרסאות). Keep the
 // notes generic — never describe the permissions / manager / block / user-
 // management system here, or regular stations learn it exists.
 const CHANGELOG = [
+  { v: '1.17.0', notes: [
+    'התראה על סריקת ברקוד לא מוכר — בהגדרות → התנהגות אפשר לבחור בין חלון קופץ (עם מחיקת הסריקה) לבין הבזק + צליל',
+    'מצב "סריקה לפי סטטוס": לחיצה ארוכה על כפתור הסריקה מסמנת כל פאה שנסרקת בסטטוס שנבחר (בנוסף לספירה, בלי לגעת בסטטוס המקורי). פס כתום מראה שהמצב פעיל',
+    'דוח הספירה מציג פילוח של הפאות החסרות והמסומנות-אחרת לפי הסטטוס המקורי, וגיליון "פילוח חסרים" נוסף לייצוא',
+    'תיקון: המספרים כבר לא נתקעים על ערך ישן בפתיחה — המלאי מתרענן מהשיטס אוטומטית בכל חזרה לאפליקציה',
+    'תיקון: עדכוני גרסה נוחתים מהר ואמין יותר על כל המכשירים'
+  ] },
   { v: '1.16.4', notes: [
     'ניקוי וסידור רשימת הסטטוסים: סטטוסים כפולים מוזגו אוטומטית, וכל סטטוס ניתן עכשיו לעריכה ולמחיקה'
   ] },
