@@ -119,11 +119,14 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.17.4';
+const APP_VERSION = '1.17.5';
 // NOTE: this changelog is visible to EVERY station (Settings → גרסאות). Keep the
 // notes generic — never describe the permissions / manager / block / user-
 // management system here, or regular stations learn it exists.
 const CHANGELOG = [
+  { v: '1.17.5', notes: [
+    'שעת הסריקה מוצגת עכשיו בכל מקום: עמודת "שעה" בטבלאות הדוח (תקין / מסומן אחרת / לא מוכר), שדה "שעת סריקה" בכרטיס הפאה, ועמודות זמן בקבצי הייצוא'
+  ] },
   { v: '1.17.4', notes: [
     'שינויי הסטטוס מוצגים עכשיו גם בדוח — כולל מי שינה, מתי, מאיזה סטטוס ולאיזה',
     'בייצוא ובדוח: הקשה על ברקוד פותחת את כרטיס הפאה — גם בתצוגת שינויי הסטטוס'
@@ -1411,6 +1414,19 @@ function statusSummaryText(list) {
   return rows.map(([st, n]) => `${statusLabel(st)}: ${n.toLocaleString()}`).join(' · ');
 }
 
+// dd/MM HH:mm for timestamps shown in the report / wig card / exports.
+function fmtDayTime(t) {
+  if (!t) return '';
+  const d = new Date(t), p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+// When was a barcode last scanned — cloud detail first (all stations), then
+// this device's own record as a fallback.
+function scanTimeOf(bc) {
+  const d = state.cloudDetail && state.cloudDetail[bc];
+  return (d && d.last) || (state.scans[bc] && state.scans[bc].first) || 0;
+}
+
 // In-app status changes (wig card / scan-to-status), fully attributed: which
 // wig, from what, to what, by whom and when. Every cell links to the wig card.
 function statusChangesTable() {
@@ -1587,6 +1603,7 @@ function renderProductCard() {
       ${field('בחנות', v.inInv && isInStore(v.status) ? 'כן' : 'לא')}
       ${field('נסרקה', v.scanned ? ('כן · ' + v.scanned + ' פעמים') : 'לא')}
       ${d && d.station ? field('עמדה', esc(d.station)) : ''}
+      ${scanTimeOf(bc) ? field('שעת סריקה', fmtDayTime(scanTimeOf(bc))) : ''}
     </div>
     <div class="pc-soon">${ic('info')} מחיר והיסטוריה — בקרוב</div>`;
   const nameEl = $('#pcName');
@@ -1703,6 +1720,10 @@ function renderReport(force) {
     const d = state.cloudDetail && state.cloudDetail[i.barcode];
     return d && d.station ? esc(d.station) : '<span class="muted">—</span>';
   } };
+  const timeCol = { label: 'שעה', render: i => {
+    const t = scanTimeOf(i.barcode);
+    return t ? `<span class="muted small">${fmtDayTime(t)}</span>` : '<span class="muted">—</span>';
+  } };
   const delCol = { label: '', render: i =>
     `<button class="del-btn" data-del-code="${esc(i.barcode)}" title="מחק סריקה">${ic('trash')}</button>` };
   const expected = r.expectedInStock;
@@ -1742,13 +1763,13 @@ function renderReport(force) {
     </div>
 
     <div id="acc-other">${accCard(ic('alert', 'warn') + ' בחנות אך מסומן אחרת', r.foundOther.length,
-      statusSummaryText(fOther), tableFor(fOther, [nameCol, bcCol, statusCol, stationCol, delCol]), openIf(fOther.length))}</div>
+      statusSummaryText(fOther), tableFor(fOther, [nameCol, bcCol, statusCol, stationCol, timeCol, delCol]), openIf(fOther.length))}</div>
 
     <div id="acc-missing">${accCard(ic('x', 'bad') + ' חסרות', r.missing.length,
       statusSummaryText(fMissing), tableFor(fMissing, [nameCol, bcCol, statusCol]), openIf(fMissing.length))}</div>
 
     <div id="acc-unknown">${accCard(ic('help', 'unknown') + ' ברקודים לא מוכרים', r.unknown.length,
-      '', tableFor(fUnknown, [nameCol, bcCol, countCol, stationCol, delCol]), openIf(fUnknown.length))}</div>
+      '', tableFor(fUnknown, [nameCol, bcCol, countCol, stationCol, timeCol, delCol]), openIf(fUnknown.length))}</div>
 
     <div id="acc-dup">${accCard(ic('copy', 'dup') + ' כפילויות', r.duplicates.length, '',
       tableFor(fDup, [nameCol, bcCol, countCol]), openIf(fDup.length))}</div>
@@ -1757,7 +1778,7 @@ function renderReport(force) {
       '', statusChangesTable())}</div>
 
     <div id="acc-ok">${accCard(ic('check', 'ok') + ' תקין', r.ok.length, '',
-      tableFor(fOk, [nameCol, bcCol, statusCol, stationCol, delCol]), openIf(fOk.length))}</div>
+      tableFor(fOk, [nameCol, bcCol, statusCol, stationCol, timeCol, delCol]), openIf(fOk.length))}</div>
 
     <div id="acc-stations">${accCard(ic('users') + ' פילוח לפי עמדה / עובדת', Object.keys(state.cloudDetail || {}).length ? (state.cloudDevices || '') : '',
       '', stationBreakdown())}</div>
@@ -1838,9 +1859,9 @@ function stamp() {
 /* ---------- Report data builders (header row first) ---------- */
 function dataReconciliation() {
   const r = reconcile();
-  const rows = [['barcode', 'name', 'category', 'status', 'scan_count']];
+  const rows = [['barcode', 'name', 'category', 'status', 'scan_count', 'scan_time']];
   const push = (list, cat) => list.forEach(i =>
-    rows.push([i.barcode, wigName(i.barcode), cat, i.status || statusOf(i.barcode) || '', (state.scans[i.barcode]?.count) || (i.count || '')]));
+    rows.push([i.barcode, wigName(i.barcode), cat, i.status || statusOf(i.barcode) || '', (state.scans[i.barcode]?.count) || (i.count || ''), fmtDayTime(scanTimeOf(i.barcode))]));
   push(r.foundOther, 'in-store-but-flagged');
   push(r.missing, 'missing');
   push(r.unknown, 'unknown-barcode');
@@ -1887,8 +1908,8 @@ function dataUpdates() {
   return rows;
 }
 function dataScans() {
-  const rows = [['barcode', 'scan_count']];
-  Object.entries(effectiveScans()).forEach(([bc, s]) => rows.push([bc, s.count]));
+  const rows = [['barcode', 'scan_count', 'last_scan_time']];
+  Object.entries(effectiveScans()).forEach(([bc, s]) => rows.push([bc, s.count, fmtDayTime(scanTimeOf(bc))]));
   return rows;
 }
 function dataStations() {
