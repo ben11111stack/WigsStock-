@@ -119,11 +119,14 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.17.7';
+const APP_VERSION = '1.17.8';
 // NOTE: this changelog is visible to EVERY station (Settings → גרסאות). Keep the
 // notes generic — never describe the permissions / manager / block / user-
 // management system here, or regular stations learn it exists.
 const CHANGELOG = [
+  { v: '1.17.8', notes: [
+    'עיצוב חדש לבורר "סריקה לפי סטטוס" — בשפה של האפליקציה: נקודת סטטוס ירוקה לפריטי מלאי, סימון ברור של המצב הפעיל, וכפתור חזרה לספירה רגילה'
+  ] },
   { v: '1.17.7', notes: [
     'שינויי סטטוס ושמות שנערכו באפליקציה נכתבים עכשיו לשיטס אוטומטית (עמודת "סטטוס (עודכן)") — בלי צורך בלחיצה ידנית על "כתיבה לשיטס"'
   ] },
@@ -888,15 +891,19 @@ function openScanStatusPicker() {
   const wrap = document.createElement('div');
   wrap.className = 'modal ui-dialog';
   const opts = vocab.map(s =>
-    '<button type="button" class="btn secondary scan-st-opt" data-st="' + esc(s.key) + '"' +
-    (s.key === scanStatusMode ? ' style="outline:2px solid #2563eb"' : '') + '>' + esc(s.label) + '</button>').join('');
+    '<button type="button" class="st-pick scan-st-opt' + (s.inStore ? ' instore' : '') + (s.key === scanStatusMode ? ' on' : '') + '" data-st="' + esc(s.key) + '">' +
+      '<span class="st-dot"></span>' +
+      '<span class="st-lbl">' + esc(s.label) + '</span>' +
+      (s.key === scanStatusMode ? '<span class="st-check">' + ic('check') + '</span>' : '') +
+    '</button>').join('');
   wrap.innerHTML = '<div class="modal-card dlg-card">' +
     '<div class="dlg-title">' + ic('edit') + ' סריקה לפי סטטוס</div>' +
-    '<div class="dlg-msg">בחרי סטטוס — כל פאה שתסרקי תסומן בו (ותיספר כרגיל). לא נוגע בסטטוס המקורי בשיטס.</div>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0;max-height:50vh;overflow:auto">' + opts + '</div>' +
+    '<div class="dlg-msg">בחרי סטטוס — כל פאה שתיסרק תסומן בו ותיספר כרגיל.</div>' +
+    '<div class="st-pick-grid">' + opts + '</div>' +
+    '<div class="st-pick-hint">' + ic('info') + ' הסטטוס המקורי בשיטס לא משתנה — השינוי נכתב לעמודה נפרדת.</div>' +
     '<div class="dlg-actions">' +
+      (scanStatusMode ? '<button type="button" class="btn" data-st-normal>' + ic('check') + ' חזרה לספירה רגילה</button>' : '') +
       '<button type="button" class="btn ghost" data-st-cancel>ביטול</button>' +
-      (scanStatusMode ? '<button type="button" class="btn" data-st-normal>חזרה לספירה רגילה</button>' : '') +
     '</div></div>';
   document.body.appendChild(wrap);
   const close = () => wrap.remove();
