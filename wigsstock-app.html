@@ -870,6 +870,7 @@ td .ic { width: 15px; height: 15px; }
         </div>
         <p class="small muted center" id="cameraNote"></p>
         <div id="scanBanner" class="scan-banner"><div class="msg muted">פותח מצלמה…</div></div>
+        <div id="scanModeBar" class="hidden"></div>
         <div class="scan-tools">
           <span class="scan-mini"><b id="scanCount">0</b> נסרקו <span class="pending-badge hidden"></span></span>
           <span class="scan-tools-btns">
@@ -951,6 +952,9 @@ td .ic { width: 15px; height: 15px; }
           <div class="fld-lbl" style="margin-top:20px">טאב פתיחה</div>
           <div class="hint" style="margin:0 0 8px">הטאב שייפתח כשמפעילים את האפליקציה</div>
           <div id="defaultTabPicker" class="seg-picker"></div>
+          <div class="fld-lbl" style="margin-top:20px">התראה על ברקוד לא מוכר</div>
+          <div class="hint" style="margin:0 0 8px">מה יקרה כשנסרק ברקוד שאינו בקובץ המלאי</div>
+          <div id="unknownAlertPicker" class="seg-picker"></div>
         </div>
       </div>
 
@@ -1417,6 +1421,7 @@ const state = {
   statusSchemaV: 0,  // local marker: has the one-time status-dedup migration run? (see migrateStatuses)
   logoAnim: true,    // constant motion of the small header logo (splash always plays regardless)
   defaultTab: 'scan',// which tab opens on app launch
+  unknownAlert: 'popup', // how to alert on an unrecognized scan: 'popup' (blocking) | 'flash' (device-local)
   lastSettingsAt: 0  // newest shared-settings timestamp this device has applied (local bookkeeping)
 };
 
@@ -1794,6 +1799,11 @@ function recordScan(rawCode, opts) {
   if (cloudEnabled()) { state.dirty[code] = true; schedulePush(); }
 
   const known = code in state.inventory;
+  // Scan-to-status mode: stamp the chosen status on a known wig too (a synced
+  // override — never touches the sheet's original value). The physical scan is
+  // still recorded above, so the wig also counts in the inventory count.
+  // Unknown codes fall through to the normal unknown handling / alert.
+  if (scanStatusMode && known) applyScanStatusOverride(code, scanStatusMode);
   const kind = !known ? 'unknown' : existing ? 'dup' : 'ok';
   logSession(code, kind);
   if (!opts.fromHistory) { undoStack.push({ code }); redoStack.length = 0; updateUndoRedo(); }
@@ -1867,6 +1877,7 @@ function showScanFeedback(code, wasDuplicate) {
   if (!known) { kind = 'unknown'; glyph = 'help'; msg = 'ברקוד לא מוכר — לא בקובץ'; }
   else if (wasDuplicate) { kind = 'dup'; glyph = 'copy'; msg = 'כבר נסרק'; }
   else { kind = 'ok'; glyph = 'check'; msg = 'נסרק בהצלחה'; }
+  if (known && scanStatusMode) msg += ' · סומן: ' + statusLabel(scanStatusMode);
   banner.className = 'scan-banner ' + kind;
   banner.innerHTML = `<div class="code">${esc(code)}</div><div class="msg">${ic(glyph)} ${msg}</div>`;
   // flash the scan line green on a successful read (red otherwise)
@@ -1878,6 +1889,119 @@ function showScanFeedback(code, wasDuplicate) {
   }
   beep(kind);
   if (navigator.vibrate) navigator.vibrate(kind === 'ok' ? 40 : [40, 60, 40]);
+  // Prominent alert on an unrecognized scan (style chosen in Settings).
+  if (!known) notifyUnknown(code);
+}
+
+/* ---------- Unknown-barcode alert ----------
+ * A scan that isn't in the inventory file is easy to miss mid-count, so we
+ * surface it loudly. Two styles, chosen per device in Settings:
+ *   'popup' — a blocking styled dialog offering to discard the mis-scan
+ *   'flash' — a big red screen flash + strong sound/vibration (non-blocking) */
+function notifyUnknown(code) {
+  if ((state.unknownAlert || 'popup') === 'flash') {
+    unknownFlash(code);
+    if (navigator.vibrate) navigator.vibrate([120, 60, 120, 60, 200]);
+    return;
+  }
+  uiConfirm('הברקוד ' + code + ' לא נמצא בקובץ המלאי.\nייתכן שזו טעות סריקה.', {
+    title: 'ברקוד לא מוכר', danger: true, confirmText: 'מחק סריקה', cancelText: 'השאר בכל זאת'
+  }).then(discard => { if (discard) unrecordScan(code); });
+}
+function unknownFlash(code) {
+  let o = document.getElementById('unknownFlash');
+  if (!o) {
+    o = document.createElement('div');
+    o.id = 'unknownFlash';
+    o.style.cssText = 'position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;' +
+      'flex-direction:column;gap:10px;background:rgba(220,38,38,.9);color:#fff;font-size:1.7rem;font-weight:800;' +
+      'text-align:center;pointer-events:none;opacity:0;transition:opacity .1s;';
+    document.body.appendChild(o);
+  }
+  o.innerHTML = ic('help') + '<div>ברקוד לא מוכר</div><div style="font-size:1.1rem;direction:ltr">' + esc(code) + '</div>';
+  o.style.opacity = '1';
+  clearTimeout(unknownFlash._t);
+  unknownFlash._t = setTimeout(() => { o.style.opacity = '0'; }, 900);
+}
+
+/* ---------- Scan-to-status mode ----------
+ * Long-press the scan tab to pick a status; every wig scanned afterwards is
+ * ALSO stamped with it (a synced override — the sheet's original value is never
+ * touched) while still counting in the inventory count. Device-local and
+ * transient: it resets on a full reload so it can't linger by accident. */
+let scanStatusMode = null;
+function applyScanStatusOverride(bc, status) {
+  state.statusOverrides = state.statusOverrides || {};
+  if (state.inventory[bc] === status) delete state.statusOverrides[bc];  // matches the sheet → no override
+  else state.statusOverrides[bc] = status;
+}
+function setScanStatusMode(status) {
+  scanStatusMode = status || null;
+  renderScanModeBar();
+  renderReport(true);
+}
+function renderScanModeBar() {
+  const bar = document.getElementById('scanModeBar');
+  if (!bar) return;
+  if (!scanStatusMode) { bar.className = 'hidden'; bar.style.cssText = ''; bar.innerHTML = ''; return; }
+  bar.className = '';
+  bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0;' +
+    'padding:10px 12px;border-radius:12px;background:#2563eb;color:#fff;font-weight:700;';
+  bar.innerHTML = '<span>' + ic('edit') + ' מצב סימון: <b>' + esc(statusLabel(scanStatusMode)) + '</b></span>' +
+    '<button class="btn ghost small-btn" id="scanModeOff" style="background:#fff;color:#2563eb">סיום</button>';
+  const off = document.getElementById('scanModeOff');
+  if (off) off.onclick = () => setScanStatusMode(null);
+}
+function openScanStatusPicker() {
+  const vocab = statusVocab();
+  const wrap = document.createElement('div');
+  wrap.className = 'modal ui-dialog';
+  const opts = vocab.map(s =>
+    '<button type="button" class="btn secondary scan-st-opt" data-st="' + esc(s.key) + '"' +
+    (s.key === scanStatusMode ? ' style="outline:2px solid #2563eb"' : '') + '>' + esc(s.label) + '</button>').join('');
+  wrap.innerHTML = '<div class="modal-card dlg-card">' +
+    '<div class="dlg-title">' + ic('edit') + ' סריקה לפי סטטוס</div>' +
+    '<div class="dlg-msg">בחרי סטטוס — כל פאה שתסרקי תסומן בו (ותיספר כרגיל). לא נוגע בסטטוס המקורי בשיטס.</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0;max-height:50vh;overflow:auto">' + opts + '</div>' +
+    '<div class="dlg-actions">' +
+      '<button type="button" class="btn ghost" data-st-cancel>ביטול</button>' +
+      (scanStatusMode ? '<button type="button" class="btn" data-st-normal>חזרה לספירה רגילה</button>' : '') +
+    '</div></div>';
+  document.body.appendChild(wrap);
+  const close = () => wrap.remove();
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
+  wrap.querySelector('[data-st-cancel]').onclick = close;
+  const normal = wrap.querySelector('[data-st-normal]');
+  if (normal) normal.onclick = () => { setScanStatusMode(null); close(); };
+  wrap.querySelectorAll('[data-st]').forEach(b => b.onclick = () => {
+    setScanStatusMode(b.getAttribute('data-st')); close(); navigate('scan');
+  });
+}
+// Fire `fn` on a long press (touch or mouse) and swallow the click that follows,
+// so long-pressing the scan tab opens the picker instead of navigating.
+function attachLongPress(el, fn) {
+  if (!el) return;
+  let timer = null, fired = false;
+  const start = () => { fired = false; timer = setTimeout(() => { fired = true; fn(); }, 550); };
+  const cancel = () => { clearTimeout(timer); };
+  el.addEventListener('touchstart', start, { passive: true });
+  el.addEventListener('touchend', cancel);
+  el.addEventListener('touchmove', cancel, { passive: true });
+  el.addEventListener('mousedown', start);
+  el.addEventListener('mouseup', cancel);
+  el.addEventListener('mouseleave', cancel);
+  el.addEventListener('click', (e) => { if (fired) { e.preventDefault(); e.stopPropagation(); fired = false; } }, true);
+}
+function renderUnknownAlert() {
+  const wrap = $('#unknownAlertPicker');
+  if (!wrap) return;
+  const cur = state.unknownAlert || 'popup';
+  const opts = [{ k: 'popup', l: 'חלון קופץ' }, { k: 'flash', l: 'הבזק + צליל' }];
+  wrap.innerHTML = opts.map(o =>
+    '<button class="seg-opt' + (o.k === cur ? ' active' : '') + '" data-ua="' + o.k + '">' + o.l + '</button>').join('');
+  wrap.querySelectorAll('[data-ua]').forEach(b => b.addEventListener('click', () => {
+    state.unknownAlert = b.getAttribute('data-ua'); save(); renderUnknownAlert();
+  }));
 }
 let hitTimer = null;
 
@@ -3405,6 +3529,9 @@ function init() {
 
   // tabs (each switch pushes history so the back button walks tabs, not out of the app)
   $$('nav button').forEach(b => b.addEventListener('click', () => navigate(b.id.replace('tab-', ''))));
+  // long-press the scan tab → pick a status to stamp on every scan (scan-to-status mode)
+  attachLongPress($('#tab-scan'), openScanStatusPicker);
+  renderScanModeBar();
   window.addEventListener('popstate', (e) => {
     const st = e.state || { tab: 'scan' };
     showTab(st.tab || 'scan');
@@ -3610,6 +3737,7 @@ function setupTheme() {
     logoEl.addEventListener('change', () => { state.logoAnim = logoEl.checked; save(); applyLogoAnim(); });
   }
   renderDefaultTab();
+  renderUnknownAlert();
 }
 function renderDefaultTab() {
   const wrap = $('#defaultTabPicker');
