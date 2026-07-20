@@ -1282,11 +1282,15 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.17.2';
+const APP_VERSION = '1.17.3';
 // NOTE: this changelog is visible to EVERY station (Settings → גרסאות). Keep the
 // notes generic — never describe the permissions / manager / block / user-
 // management system here, or regular stations learn it exists.
 const CHANGELOG = [
+  { v: '1.17.3', notes: [
+    'ברקוד לא מוכר (חלון קופץ): הסריקה כבר לא נשמרת אוטומטית — היא נשמרת רק אחרי אישור "שמור בכל זאת"',
+    'כשהחלון פתוח הסריקה מושהית — תזוזה של המצלמה כבר לא מעלימה את החלון או שומרת סריקות ברקע'
+  ] },
   { v: '1.17.2', notes: [
     'גיליון חדש בייצוא — "שינויי סטטוס": כל הפאות שסומנו בסטטוס אחר מהאפליקציה, עם הסטטוס המקורי מהשיטס לצד החדש',
     'גיליון "עדכוני סטטוס" כבר לא מציע להחזיר למלאי פאות שסומנו בכוונה בסטטוס אחר'
@@ -1813,17 +1817,36 @@ function recordScan(rawCode, opts) {
   if (!hasStation()) { applyStationGate(); return; }   // never record without a station
   if (stationClaim.blocked) { applyBlockGate(); return; }   // blocked by the admin
 
+  // While the unknown-barcode prompt is open, ignore EVERY scan — nothing may
+  // be recorded behind the manager's back, and a camera re-fire must not
+  // replace (and so dismiss) the open dialog. Self-heals if the dialog was
+  // closed by any other means.
+  if (unknownPromptOpen) {
+    if (document.querySelector('.ui-dialog')) return;
+    unknownPromptOpen = false;
+  }
+
   // Debounce: ignore the same code fired twice within 1.2s (camera repeats).
+  // A confirmed unknown re-record must bypass it — the prompt scan itself
+  // already primed the debounce, and a fast approval would be swallowed.
   const now = Date.now();
-  if (!opts.fromHistory && code === lastScanCode && now - lastScanTs < 1200) return;
+  if (!opts.fromHistory && !opts.confirmedUnknown && code === lastScanCode && now - lastScanTs < 1200) return;
   lastScanCode = code; lastScanTs = now;
+
+  const known = code in state.inventory;
+  // Unknown barcode in popup mode: ask FIRST, record only on explicit approval.
+  // A mis-scan must never be saved automatically.
+  if (!known && !opts.confirmedUnknown && !opts.fromHistory && (state.unknownAlert || 'popup') === 'popup') {
+    unknownPromptOpen = true;
+    promptUnknownScan(code);
+    return;
+  }
 
   const existing = state.scans[code];
   if (existing) existing.count++;
   else state.scans[code] = { count: 1, first: now };
   if (cloudEnabled()) { state.dirty[code] = true; schedulePush(); }
 
-  const known = code in state.inventory;
   // Scan-to-status mode: stamp the chosen status on a known wig too (a synced
   // override — never touches the sheet's original value). The physical scan is
   // still recorded above, so the wig also counts in the inventory count.
@@ -1924,14 +1947,33 @@ function showScanFeedback(code, wasDuplicate) {
  *   'popup' — a blocking styled dialog offering to discard the mis-scan
  *   'flash' — a big red screen flash + strong sound/vibration (non-blocking) */
 function notifyUnknown(code) {
+  // Popup mode is handled BEFORE the scan is recorded (promptUnknownScan) —
+  // here only the non-blocking flash style, for scans that were recorded.
   if ((state.unknownAlert || 'popup') === 'flash') {
     unknownFlash(code);
     if (navigator.vibrate) navigator.vibrate([120, 60, 120, 60, 200]);
-    return;
   }
-  uiConfirm('הברקוד ' + code + ' לא נמצא בקובץ המלאי.\nייתכן שזו טעות סריקה.', {
-    title: 'ברקוד לא מוכר', danger: true, confirmText: 'מחק סריקה', cancelText: 'השאר בכל זאת'
-  }).then(discard => { if (discard) unrecordScan(code); });
+}
+// Ask about an unrecognized barcode BEFORE recording it. While the dialog is
+// open recordScan ignores all scans (see unknownPromptOpen), so a moving
+// camera can't re-fire and replace the dialog or save anything silently.
+// Dismissing the dialog = not saved — the safe default.
+let unknownPromptOpen = false;
+function promptUnknownScan(code) {
+  const banner = $('#scanBanner');
+  if (banner) {
+    banner.className = 'scan-banner unknown';
+    banner.innerHTML = `<div class="code">${esc(code)}</div><div class="msg">${ic('help')} ברקוד לא מוכר — ממתין להחלטה</div>`;
+  }
+  beep('unknown');
+  if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
+  uiConfirm('הברקוד ' + code + ' לא נמצא בקובץ המלאי.\nייתכן שזו טעות סריקה. לשמור בכל זאת?', {
+    title: 'ברקוד לא מוכר', danger: true, confirmText: 'שמור בכל זאת', cancelText: 'אל תשמור'
+  }).then(keep => {
+    unknownPromptOpen = false;
+    if (keep) recordScan(code, { confirmedUnknown: true });
+    else flashBanner(ic('check') + ' הסריקה לא נשמרה: ' + esc(code), 'dup');
+  });
 }
 function unknownFlash(code) {
   let o = document.getElementById('unknownFlash');
