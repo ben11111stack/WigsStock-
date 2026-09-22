@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS meta (
   last_written INTEGER,           -- last successful write-back time
   settings     TEXT,              -- shared app settings, JSON blob
   settings_at  INTEGER,           -- when settings last changed (last-write-wins)
+  app_disabled INTEGER NOT NULL DEFAULT 0, -- master kill switch controlled by an admin
+  disabled_at  INTEGER,
+  disabled_by  TEXT,
   updated_at   INTEGER
 );
 
