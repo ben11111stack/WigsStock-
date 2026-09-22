@@ -1301,11 +1301,14 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.17.8';
+const APP_VERSION = '1.17.9';
 // NOTE: this changelog is visible to EVERY station (Settings → גרסאות). Keep the
 // notes generic — never describe the permissions / manager / block / user-
 // management system here, or regular stations learn it exists.
 const CHANGELOG = [
+  { v: '1.17.9', notes: [
+    'שיפור גדול בסנכרון הענן — העמדות מעבירות ביניהן רק ברקודים שהשתנו במקום לטעון מחדש את כל הספירה כל כמה שניות'
+  ] },
   { v: '1.17.8', notes: [
     'עיצוב חדש לבורר "סריקה לפי סטטוס" — בשפה של האפליקציה: נקודת סטטוס ירוקה לפריטי מלאי, סימון ברור של המצב הפעיל, וכפתור חזרה לספירה רגילה'
   ] },
@@ -1467,6 +1470,7 @@ const state = {
   countId: '',       // shared inventory-count id across stations
   cloudScans: {},    // barcode -> total  (merged from all devices, pulled from cloud)
   cloudDetail: {},   // barcode -> { count, last, station }  (who scanned, from cloud)
+  cloudSince: 0,     // server time of the last cloud snapshot/delta we applied
   dirty: {},         // barcode -> true   (scanned locally, not yet synced)
   deviceId: '',      // stable fallback id if no station name is set
   sheetUrl: '',      // Google Sheets link the inventory is loaded/synced from
@@ -3434,20 +3438,56 @@ async function forceSync() {
   }
 }
 
-async function pullCloud() {
+async function pullCloud(forceFull) {
   if (!cloudEnabled()) return;
   try {
-    const res = await fetchT(cloudBase() + '/api/scans?count_id=' + encodeURIComponent(state.countId));
+    const full = !!forceFull || !(state.cloudSince > 0);
+    const base = cloudBase() + (full ? '/api/scans?count_id=' : '/api/changes?count_id=') +
+      encodeURIComponent(state.countId);
+    const url = full ? base :
+      base + '&since=' + encodeURIComponent(state.cloudSince || 0) +
+      '&settings_since=' + encodeURIComponent(state.lastSettingsAt || 0) +
+      '&reset_seen=' + encodeURIComponent(state.lastResetSeen || 0);
+    const res = await fetchT(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    // a reset (or a delete correction) elsewhere clears this device's local scans too
+
+    // A reset/delete/restore removes rows, which cannot be represented by a normal
+    // delta. Re-baseline once with a full snapshot; ordinary polls stay tiny.
+    if (!full && data.full) {
+      state.cloudSince = 0;
+      save();
+      return pullCloud(true);
+    }
+
     if (data.reset_at && data.reset_at > (state.lastResetSeen || 0)) {
       state.lastResetSeen = data.reset_at;
       state.scans = {}; state.dirty = {};
+      state.cloudSince = 0;
+      if (!full) {
+        save();
+        return pullCloud(true);
+      }
     }
-    state.cloudScans = data.scans || {};
-    state.cloudDetail = data.detail || {};
-    state.cloudDevices = data.devices || 0;
+
+    if (full || data.full) {
+      state.cloudScans = data.scans || {};
+      state.cloudDetail = data.detail || {};
+      if (data.devices !== undefined) state.cloudDevices = data.devices || 0;
+    } else {
+      // Delta payloads contain only changed barcodes. A zero total means all
+      // stations now report zero for that barcode, so remove it from the merged view.
+      for (const [barcode, total] of Object.entries(data.scans || {})) {
+        if (Number(total) > 0) state.cloudScans[barcode] = Number(total);
+        else delete state.cloudScans[barcode];
+      }
+      for (const barcode of Object.keys(data.scans || {})) {
+        if (data.detail && data.detail[barcode]) state.cloudDetail[barcode] = data.detail[barcode];
+        else delete state.cloudDetail[barcode];
+      }
+    }
+    if (data.version) state.cloudSince = Number(data.version) || state.cloudSince || 0;
+
     save();
     renderReport(); renderScanStats(); renderPending();
     setCloudStatus('ok', data);
@@ -3516,13 +3556,18 @@ function setCloudStatus(kind, data) {
     offline: ['warn', ic('cloudOff') + ' אין חיבור — יסונכרן אוטומטית כשתחזור רשת']
   };
   const [cls, label] = map[kind] || map.ok;
-  const extra = (kind === 'ok' && data) ? ` · ${data.barcodes || 0} ברקודים · ${data.devices || 0} עמדות` : '';
+  const shownBarcodes = data && data.barcodes !== undefined ? data.barcodes : Object.keys(state.cloudScans || {}).length;
+  const shownDevices = data && data.devices !== undefined ? data.devices : (state.cloudDevices || 0);
+  const extra = (kind === 'ok' && data) ? ` · ${shownBarcodes} ברקודים · ${shownDevices} עמדות` : '';
   const pend = Object.keys(state.dirty).length;
   const pendTxt = pend ? ` · ${pend} ממתינים` : '';
   el.innerHTML = `<span class="tag ${cls === 'ok' ? 'instock' : 'other'}">${label}</span><span class="muted small">${extra}${pendTxt}</span>`;
 }
 
 function applyCloudConfig() {
+  // URL/count changes point at a different dataset. The next request must be a
+  // full baseline before cheap deltas can resume.
+  state.cloudSince = 0;
   save();
   if (cloudEnabled()) {
     markAllDirty();
