@@ -638,6 +638,18 @@ export default {
       if (path === '/api/scans' && req.method === 'GET') {
         const countId = (url.searchParams.get('count_id') || '').trim();
         if (!countId) return json({ error: 'count_id required' }, 400);
+
+        // Compatibility for stations that still have the pre-1.17.9 app open: those
+        // clients request a full snapshot every 4 seconds. Keep one edge-cached snapshot
+        // for 30 seconds so they cannot burn millions of D1 row reads while the new
+        // delta-sync code rolls out. New clients use /api/changes and bypass this cache.
+        const legacyCache = (typeof caches !== 'undefined' && caches.default) ? caches.default : null;
+        const legacyKey = new Request(url.toString(), { method: 'GET' });
+        if (legacyCache) {
+          const hit = await legacyCache.match(legacyKey);
+          if (hit) return hit;
+        }
+
         // Mark the beginning of this snapshot. A write that lands while this query is
         // running will simply be repeated by the next delta, never missed.
         const version = Date.now();
@@ -662,9 +674,15 @@ export default {
           }
         } catch (e) { /* meta table may not exist yet */ }
 
-        return json({ ok: true, full: true, version, scans, detail, barcodes: Object.keys(scans).length,
+        const response = json({ ok: true, full: true, version, scans, detail, barcodes: Object.keys(scans).length,
           devices: deviceNames.size, sheet_url: sheetUrl, script_url: scriptUrl,
           reset_at: resetAt, settings, settings_at: settingsAt });
+        if (legacyCache) {
+          response.headers.set('Cache-Control', 'public, max-age=30');
+          if (ctx && ctx.waitUntil) ctx.waitUntil(legacyCache.put(legacyKey, response.clone()));
+          else await legacyCache.put(legacyKey, response.clone());
+        }
+        return response;
       }
 
       return json({ error: 'not found', path }, 404);
