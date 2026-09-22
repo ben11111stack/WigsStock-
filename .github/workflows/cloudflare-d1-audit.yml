@@ -128,5 +128,6 @@ jobs:
             echo "No audit result changes."
           else
             git commit -m "Record Cloudflare D1 usage audit"
+            git pull --rebase origin claude/inventory-barcode-scanner-4w4fbf
             git push origin HEAD:claude/inventory-barcode-scanner-4w4fbf
           fi
