@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - run: node build-single.js
 
@@ -42,6 +42,7 @@ jobs:
             account:process.env.CF_ACCOUNT || null,
             databases:[],
             usage_today_utc:[],
+            usage_by_day:[],
             account_total_rows_read:0
           };
           (async()=>{
@@ -64,8 +65,9 @@ jobs:
               const dbs = Array.isArray(dbResp.result)?dbResp.result:[];
               report.databases = dbs.map(d=>({name:d.name,uuid:d.uuid,created_at:d.created_at||null}));
               const now=new Date();
-              const day=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()));
-              const ds=day.toISOString().slice(0,10);
+              const today=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()));
+              const startDay=new Date(today.getTime()-2*86400000);
+              const ds=d=>d.toISOString().slice(0,10);
               const query=`query D1Usage($accountTag: string!, $start: Date, $end: Date) {
                 viewer {
                   accounts(filter:{accountTag:$accountTag}) {
@@ -79,7 +81,7 @@ jobs:
               try {
                 const gql=await req('https://api.cloudflare.com/client/v4/graphql',{
                   method:'POST',
-                  body:JSON.stringify({query,variables:{accountTag:account,start:ds,end:ds}})
+                  body:JSON.stringify({query,variables:{accountTag:account,start:ds(startDay),end:ds(today)}})
                 });
                 const groups=gql?.data?.viewer?.accounts?.[0]?.d1AnalyticsAdaptiveGroups||[];
                 const names=new Map(dbs.map(d=>[d.uuid,d.name]));
@@ -90,7 +92,21 @@ jobs:
                   for(const k of Object.keys(x)) x[k]+=Number(g.sum?.[k]||0);
                   sums.set(id,x);
                 }
-                report.usage_today_utc=[...sums.entries()].map(([databaseId,x])=>({databaseId,database:names.get(databaseId)||null,...x})).sort((a,b)=>b.rowsRead-a.rowsRead);
+                const daily=new Map();
+                for(const g of groups){
+                  const date=g.dimensions?.date||'unknown';
+                  const id=g.dimensions?.databaseId||'unknown';
+                  const key=date+'|'+id;
+                  const x=daily.get(key)||{rowsRead:0,rowsWritten:0,readQueries:0,writeQueries:0};
+                  for(const k of Object.keys(x)) x[k]+=Number(g.sum?.[k]||0);
+                  daily.set(key,x);
+                }
+                report.usage_by_day=[...daily.entries()].map(([key,x])=>{
+                  const sep=key.indexOf('|'), date=key.slice(0,sep), databaseId=key.slice(sep+1);
+                  return {date,databaseId,database:names.get(databaseId)||null,...x};
+                }).sort((a,b)=>a.date===b.date?b.rowsRead-a.rowsRead:a.date.localeCompare(b.date));
+                const todayKey=ds(today);
+                report.usage_today_utc=report.usage_by_day.filter(x=>x.date===todayKey);
                 report.account_total_rows_read=report.usage_today_utc.reduce((a,x)=>a+x.rowsRead,0);
               } catch(e) {
                 report.graphql_error=e.message;
