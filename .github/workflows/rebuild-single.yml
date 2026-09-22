@@ -21,121 +21,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: claude/inventory-barcode-scanner-4w4fbf
-
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-
+          node-version: '20'
       - run: node build-single.js
-
-      - name: Capture current Cloudflare D1 usage
-        env:
-          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CLOUDFLARE_WORKERS_TOKEN }}
-          CF_ACCOUNT: "7c5259865ad06b1a05dbff3e55d53027"
-        shell: bash
-        run: |
-          set +e
-          node <<'NODE'
-          const fs = require('fs');
-          const report = {
-            generated_at:new Date().toISOString(),
-            account:process.env.CF_ACCOUNT || null,
-            databases:[],
-            usage_today_utc:[],
-            usage_by_day:[],
-            account_total_rows_read:0
-          };
-          (async()=>{
-            try {
-              const token = process.env.CF_TOKEN;
-              const account = process.env.CF_ACCOUNT;
-              if (!token) throw new Error('No Cloudflare token available in repository secrets.');
-              const headers = {Authorization:'Bearer '+token,'Content-Type':'application/json'};
-              async function req(url, init={}) {
-                const r = await fetch(url,{...init,headers:{...headers,...(init.headers||{})}});
-                const body = await r.json().catch(()=>null);
-                if (!r.ok || body?.success === false) {
-                  const e = new Error('Cloudflare request failed HTTP '+r.status);
-                  e.details = body?.errors || body;
-                  throw e;
-                }
-                return body;
-              }
-              const dbResp = await req('https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database?per_page=100');
-              const dbs = Array.isArray(dbResp.result)?dbResp.result:[];
-              report.databases = dbs.map(d=>({name:d.name,uuid:d.uuid,created_at:d.created_at||null}));
-              const now=new Date();
-              const today=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()));
-              const startDay=new Date(today.getTime()-2*86400000);
-              const ds=d=>d.toISOString().slice(0,10);
-              const query=`query D1Usage($accountTag: string!, $start: Date, $end: Date) {
-                viewer {
-                  accounts(filter:{accountTag:$accountTag}) {
-                    d1AnalyticsAdaptiveGroups(limit:10000, filter:{date_geq:$start,date_leq:$end}) {
-                      sum { rowsRead rowsWritten readQueries writeQueries }
-                      dimensions { date databaseId }
-                    }
-                  }
-                }
-              }`;
-              try {
-                const gql=await req('https://api.cloudflare.com/client/v4/graphql',{
-                  method:'POST',
-                  body:JSON.stringify({query,variables:{accountTag:account,start:ds(startDay),end:ds(today)}})
-                });
-                const groups=gql?.data?.viewer?.accounts?.[0]?.d1AnalyticsAdaptiveGroups||[];
-                const names=new Map(dbs.map(d=>[d.uuid,d.name]));
-                const sums=new Map();
-                for(const g of groups){
-                  const id=g.dimensions?.databaseId||'unknown';
-                  const x=sums.get(id)||{rowsRead:0,rowsWritten:0,readQueries:0,writeQueries:0};
-                  for(const k of Object.keys(x)) x[k]+=Number(g.sum?.[k]||0);
-                  sums.set(id,x);
-                }
-                const daily=new Map();
-                for(const g of groups){
-                  const date=g.dimensions?.date||'unknown';
-                  const id=g.dimensions?.databaseId||'unknown';
-                  const key=date+'|'+id;
-                  const x=daily.get(key)||{rowsRead:0,rowsWritten:0,readQueries:0,writeQueries:0};
-                  for(const k of Object.keys(x)) x[k]+=Number(g.sum?.[k]||0);
-                  daily.set(key,x);
-                }
-                report.usage_by_day=[...daily.entries()].map(([key,x])=>{
-                  const sep=key.indexOf('|'), date=key.slice(0,sep), databaseId=key.slice(sep+1);
-                  return {date,databaseId,database:names.get(databaseId)||null,...x};
-                }).sort((a,b)=>a.date===b.date?b.rowsRead-a.rowsRead:a.date.localeCompare(b.date));
-                const todayKey=ds(today);
-                report.usage_today_utc=report.usage_by_day.filter(x=>x.date===todayKey);
-                report.account_total_rows_read=report.usage_today_utc.reduce((a,x)=>a+x.rowsRead,0);
-              } catch(e) {
-                report.graphql_error=e.message;
-                report.graphql_details=e.details||null;
-              }
-            } catch(e) {
-              report.audit_error=e.message;
-              report.audit_details=e.details||null;
-            }
-            fs.writeFileSync('cloudflare-d1-audit-result.json',JSON.stringify(report,null,2)+'\n');
-          })();
-          NODE
-          cd worker
-          npx wrangler@latest d1 insights wigsstock --sort-type=sum --sort-by=reads --limit=15 --timePeriod=1d --json > ../cloudflare-d1-wigsstock-insights.txt 2>&1
-          echo "exit_code=$?" >> ../cloudflare-d1-wigsstock-insights.txt
-          cd ..
-          exit 0
-
-      - name: Commit refreshed build and sanitized audit
+      - name: Commit refreshed single-file build
         shell: bash
         run: |
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add wigsstock-app.html cloudflare-d1-audit-result.json cloudflare-d1-wigsstock-insights.txt
+          git add wigsstock-app.html
           if git diff --cached --quiet; then
-            echo "Nothing changed."
+            echo "Single-file build already current."
           else
-            git commit -m "Refresh WigsStock build and D1 audit"
+            git commit -m "Refresh WigsStock single-file build"
             git pull --rebase origin claude/inventory-barcode-scanner-4w4fbf
             git push origin HEAD:claude/inventory-barcode-scanner-4w4fbf
           fi
