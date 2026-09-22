@@ -612,33 +612,35 @@ export default {
            FROM scans
            WHERE count_id = ?1 AND updated_at >= ?2 AND updated_at <= ?3
            GROUP BY barcode
-           LIMIT 101`
+           LIMIT 91`
         ).bind(countId, since, cutoff).all();
         const rows = changed.results || [];
-        if (rows.length > 100) return json({ ...base, full: true });
+        // 90 barcode parameters + count_id stay under D1's 100-bound-parameter cap.
+        // A larger burst is rare and is cheaper/simpler as one full snapshot.
+        if (rows.length > 90) return json({ ...base, full: true });
 
         const scans = {}, detail = {};
         const barcodes = rows.map(r => String(r.barcode));
-        // Recompute only the barcodes that changed. The count+barcode index turns
-        // each statement into a tiny lookup instead of a scan of the whole inventory.
-        for (let i = 0; i < barcodes.length; i += 40) {
-          const chunk = barcodes.slice(i, i + 40);
-          const batch = await env.DB.batch(chunk.map(barcode =>
-            env.DB.prepare(
-              `SELECT SUM(count) AS total, MAX(updated_at) AS last,
-                      GROUP_CONCAT(DISTINCT device) AS devices
-               FROM scans WHERE count_id = ?1 AND barcode = ?2`
-            ).bind(countId, barcode)
-          ));
-          batch.forEach((result, j) => {
-            const barcode = chunk[j];
-            const r = result && result.results && result.results[0];
+        // Recompute every changed barcode in ONE indexed SQL statement. Besides being
+        // cheaper, this stays safely below the Workers Free 50-query-per-request limit.
+        if (barcodes.length) {
+          const marks = barcodes.map((_, i) => '?' + (i + 2)).join(',');
+          const agg = await env.DB.prepare(
+            `SELECT barcode, SUM(count) AS total, MAX(updated_at) AS last,
+                    GROUP_CONCAT(DISTINCT device) AS devices
+             FROM scans
+             WHERE count_id = ?1 AND barcode IN (${marks})
+             GROUP BY barcode`
+          ).bind(countId, ...barcodes).all();
+          const byBarcode = new Map((agg.results || []).map(r => [String(r.barcode), r]));
+          for (const barcode of barcodes) {
+            const r = byBarcode.get(barcode);
             const total = Number((r && r.total) || 0);
             scans[barcode] = total; // zero means "remove this barcode" on the client
             if (total > 0) detail[barcode] = {
               count: total, last: (r && r.last) || 0, station: (r && r.devices) || ''
             };
-          });
+          }
         }
 
         // The settings blob can be large, so only send it when another station
