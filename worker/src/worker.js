@@ -27,6 +27,14 @@ const CORS = {
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
 
+function legacySnapshotKey(origin, countId) {
+  return new Request(origin + '/api/scans?count_id=' + encodeURIComponent(countId), { method: 'GET' });
+}
+async function purgeLegacySnapshot(origin, countId) {
+  if (typeof caches === 'undefined' || !caches.default) return;
+  await caches.default.delete(legacySnapshotKey(origin, countId));
+}
+
 // Optional shared secret. If API_KEY is set on the Worker (a Cloudflare
 // secret / var), every mutating endpoint requires a matching x-api-key header.
 // Unset = open, exactly like before — so this is safe to deploy as-is and can
@@ -351,6 +359,8 @@ export default {
           `INSERT INTO meta (count_id, reset_at, updated_at) VALUES (?1, ?2, ?3)
            ON CONFLICT(count_id) DO UPDATE SET reset_at = excluded.reset_at, updated_at = excluded.updated_at`
         ).bind(countId, now, now).run();
+        if (ctx && ctx.waitUntil) ctx.waitUntil(purgeLegacySnapshot(url.origin, countId));
+        else await purgeLegacySnapshot(url.origin, countId);
         return json({ ok: true, deleted: (r.meta && r.meta.changes) || 0, reset_at: now, backup_id: backupId });
       }
 
@@ -411,6 +421,8 @@ export default {
           `INSERT INTO meta (count_id, reset_at, updated_at) VALUES (?1, ?2, ?3)
            ON CONFLICT(count_id) DO UPDATE SET reset_at = excluded.reset_at, updated_at = excluded.updated_at`
         ).bind(countId, now, now).run();
+        if (ctx && ctx.waitUntil) ctx.waitUntil(purgeLegacySnapshot(url.origin, countId));
+        else await purgeLegacySnapshot(url.origin, countId);
         if (restored > 0 && ctx && ctx.waitUntil) ctx.waitUntil(maybeWriteback(env, countId));
         return json({ ok: true, restored, reset_at: now });
       }
@@ -564,6 +576,8 @@ export default {
           `INSERT INTO meta (count_id, reset_at, updated_at) VALUES (?1, ?2, ?3)
            ON CONFLICT(count_id) DO UPDATE SET reset_at = excluded.reset_at, updated_at = excluded.updated_at`
         ).bind(countId, now, now).run();
+        if (ctx && ctx.waitUntil) ctx.waitUntil(purgeLegacySnapshot(url.origin, countId));
+        else await purgeLegacySnapshot(url.origin, countId);
         return json({ ok: true, deleted: (r.meta && r.meta.changes) || 0, reset_at: now });
       }
 
@@ -644,7 +658,7 @@ export default {
         // for 30 seconds so they cannot burn millions of D1 row reads while the new
         // delta-sync code rolls out. New clients use /api/changes and bypass this cache.
         const legacyCache = (typeof caches !== 'undefined' && caches.default) ? caches.default : null;
-        const legacyKey = new Request(url.toString(), { method: 'GET' });
+        const legacyKey = legacySnapshotKey(url.origin, countId);
         if (legacyCache) {
           const hit = await legacyCache.match(legacyKey);
           if (hit) return hit;
