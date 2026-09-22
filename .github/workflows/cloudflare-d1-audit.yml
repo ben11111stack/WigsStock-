@@ -1,0 +1,102 @@
+name: Cloudflare D1 usage audit
+
+on:
+  push:
+    branches: [claude/inventory-barcode-scanner-4w4fbf]
+    paths:
+      - '.github/workflows/cloudflare-d1-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Audit D1 rows read by database
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CLOUDFLARE_WORKERS_TOKEN }}
+          CF_ACCOUNT: "7c5259865ad06b1a05dbff3e55d53027"
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const token = process.env.CF_TOKEN;
+          const account = process.env.CF_ACCOUNT;
+          if (!token) throw new Error('No Cloudflare token is available in repository secrets.');
+          const headers = {Authorization: 'Bearer ' + token, 'Content-Type': 'application/json'};
+
+          async function json(url, init={}) {
+            const r = await fetch(url, {...init, headers:{...headers,...(init.headers||{})}});
+            const body = await r.json().catch(()=>null);
+            if (!r.ok || body?.success === false) {
+              throw new Error('Cloudflare request failed ('+r.status+'): '+JSON.stringify(body?.errors||body).slice(0,500));
+            }
+            return body;
+          }
+
+          const dbResp = await json('https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database?per_page=100');
+          const dbs = Array.isArray(dbResp.result) ? dbResp.result : [];
+          console.log('D1 DATABASES');
+          for (const d of dbs) console.log('- '+d.name+' | '+d.uuid);
+
+          const now = new Date();
+          const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+          const end = new Date(start.getTime()+86400000-1);
+          const ds = d => d.toISOString().slice(0,10);
+          const query = `query D1Usage($accountTag: string!, $start: Date, $end: Date) {
+            viewer {
+              accounts(filter: { accountTag: $accountTag }) {
+                d1AnalyticsAdaptiveGroups(
+                  limit: 10000
+                  filter: { date_geq: $start, date_leq: $end }
+                ) {
+                  sum { rowsRead rowsWritten readQueries writeQueries }
+                  dimensions { date databaseId }
+                }
+              }
+            }
+          }`;
+          try {
+            const gql = await json('https://api.cloudflare.com/client/v4/graphql', {
+              method:'POST',
+              body:JSON.stringify({query, variables:{accountTag:account,start:ds(start),end:ds(end)}})
+            });
+            const groups = gql?.data?.viewer?.accounts?.[0]?.d1AnalyticsAdaptiveGroups || [];
+            const byId = new Map(dbs.map(d=>[d.uuid,d.name]));
+            const sums = new Map();
+            for (const g of groups) {
+              const id = g.dimensions?.databaseId || 'unknown';
+              const x = sums.get(id) || {rowsRead:0,rowsWritten:0,readQueries:0,writeQueries:0};
+              for (const k of Object.keys(x)) x[k] += Number(g.sum?.[k]||0);
+              sums.set(id,x);
+            }
+            console.log('\nTODAY UTC D1 USAGE ('+ds(start)+')');
+            let total = 0;
+            [...sums.entries()].sort((a,b)=>b[1].rowsRead-a[1].rowsRead).forEach(([id,x])=>{
+              total += x.rowsRead;
+              console.log((byId.get(id)||id)+': rowsRead='+x.rowsRead+', rowsWritten='+x.rowsWritten+', readQueries='+x.readQueries+', writeQueries='+x.writeQueries);
+            });
+            console.log('ACCOUNT TOTAL rowsRead='+total);
+          } catch (e) {
+            console.log('\nGRAPHQL ANALYTICS FAILED: '+e.message);
+          }
+          NODE
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Top WigsStock queries by rows read
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN || secrets.CLOUDFLARE_TOKEN || secrets.CLOUDFLARE_WORKERS_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: "7c5259865ad06b1a05dbff3e55d53027"
+        shell: bash
+        run: |
+          set +e
+          npx wrangler@latest d1 insights wigsstock --sort-type=sum --sort-by=reads --limit=10 --timePeriod=1d --json
+          exit 0
