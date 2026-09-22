@@ -52,6 +52,15 @@
 
   <main>
 
+    <div id="appDisabledGate" class="app-disabled-gate hidden" role="status" aria-live="polite">
+      <div class="app-disabled-card">
+        <span class="app-disabled-ic" data-ic="power"></span>
+        <h2>האפליקציה מושבתת</h2>
+        <p>מנהל השבית את WigsStock. הסנכרון, הסריקה והפעילות ברקע נעצרו.</p>
+        <button id="appEnableBtn" class="btn hidden">הפעל מחדש</button>
+      </div>
+    </div>
+
     <div id="installBar" class="install-bar hidden">
       <span id="installText">התקן את האפליקציה למסך הבית</span>
       <span class="install-actions">
@@ -230,6 +239,24 @@
         </button>
         <div class="acc-body">
           <div id="statusManager"></div>
+        </div>
+      </div>
+
+      <div class="acc" data-admin-only>
+        <button class="acc-head">
+          <span class="acc-titles"><span class="acc-title"><span data-ic="power"></span> הפעלה והשבתה</span><span class="acc-sub">כיבוי מלא של האפליקציה מכל העמדות</span></span>
+          <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="acc-body">
+          <div id="appPowerStatus" class="muted small" style="margin-bottom:10px">בודק מצב…</div>
+          <div class="danger-note">
+            <span class="danger-note-ic" data-ic="alert"></span>
+            <div>
+              <b>מתג ראשי לכל האפליקציה</b>
+              <p>השבתה עוצרת סנכרון וסריקות בכל העמדות, ומונעת מהקרון לבצע עבודת D1 כבדה. מנהל יכול להפעיל מחדש בכל רגע.</p>
+            </div>
+          </div>
+          <button class="btn danger" id="appPowerBtn"><span data-ic="power"></span> השבת את האפליקציה</button>
         </div>
       </div>
 
