@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS scans (
   PRIMARY KEY (count_id, device, barcode)
 );
 CREATE INDEX IF NOT EXISTS idx_scans_count ON scans (count_id);
+-- Live sync polls by "what changed since the previous answer" and then
+-- recomputes only those barcodes. These two indexes prevent full-table scans.
+CREATE INDEX IF NOT EXISTS idx_scans_count_updated ON scans (count_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_scans_count_barcode ON scans (count_id, barcode);
 
 -- Per-count metadata: inventory source, write-back target, reset generation,
 -- and the shared app settings blob (accent/dark/sound/names/statusOverrides/…).
