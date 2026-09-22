@@ -119,11 +119,15 @@ const KNOWN_STATUSES = DEFAULT_STATUSES.map(s => s.key);
 const DEFAULT_CLOUD_URL = 'https://wigsstock-sync.benzi-naor.workers.dev';
 const DEFAULT_COUNT_ID = 'main';
 
-const APP_VERSION = '1.17.9';
+const APP_VERSION = '1.18.0';
 // NOTE: this changelog is visible to EVERY station (Settings → גרסאות). Keep the
 // notes generic — never describe the permissions / manager / block / user-
 // management system here, or regular stations learn it exists.
 const CHANGELOG = [
+  { v: '1.18.0', notes: [
+    'נוסף למנהלים מתג ראשי להשבתה והפעלה מחדש של האפליקציה מכל העמדות',
+    'כשהאפליקציה מושבתת נעצרים סנכרון, סריקה ופעילות רקע'
+  ] },
   { v: '1.17.9', notes: [
     'שיפור גדול בסנכרון הענן — העמדות מעבירות ביניהן רק ברקודים שהשתנו במקום לטעון מחדש את כל הספירה כל כמה שניות'
   ] },
@@ -289,6 +293,9 @@ const state = {
   cloudScans: {},    // barcode -> total  (merged from all devices, pulled from cloud)
   cloudDetail: {},   // barcode -> { count, last, station }  (who scanned, from cloud)
   cloudSince: 0,     // server time of the last cloud snapshot/delta we applied
+  appDisabled: false, // master shutdown state last reported by the server
+  appDisabledAt: 0,
+  appDisabledBy: '',
   dirty: {},         // barcode -> true   (scanned locally, not yet synced)
   deviceId: '',      // stable fallback id if no station name is set
   sheetUrl: '',      // Google Sheets link the inventory is loaded/synced from
@@ -524,7 +531,8 @@ const ICONS = {
   archive:  '<rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9"/><path d="M10 13h4"/>',
   info:     '<circle cx="12" cy="12" r="9"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
   chevron:  '<path d="m15 18-6-6 6-6"/>',
-  palette:  '<circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.5-.7 1.5-1.5 0-.4-.2-.8-.4-1-.3-.3-.4-.6-.4-1 0-.8.7-1.5 1.5-1.5H16c3.3 0 6-2.7 6-6 0-4.9-4.5-9-10-9z"/>'
+  palette:  '<circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.5-.7 1.5-1.5 0-.4-.2-.8-.4-1-.3-.3-.4-.6-.4-1 0-.8.7-1.5 1.5-1.5H16c3.3 0 6-2.7 6-6 0-4.9-4.5-9-10-9z"/>',
+  power:    '<path d="M12 2v10"/><path d="M18.4 5.6a9 9 0 1 1-12.8 0"/>'
 };
 function ic(name, cls) {
   return `<svg class="ic${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
@@ -2185,6 +2193,85 @@ function applyRemoteSettings(settings, at) {
   reconcile(); renderReport(true); renderScanStats();
 }
 
+function rememberAppState(data) {
+  if (!data || typeof data.disabled !== 'boolean') return;
+  state.appDisabled = data.disabled;
+  state.appDisabledAt = Number(data.disabled_at || 0);
+  state.appDisabledBy = String(data.disabled_by || '');
+  if (!state.appDisabled) {
+    state.appDisabledAt = 0;
+    state.appDisabledBy = '';
+  }
+  save();
+  applyAppGate();
+}
+
+function applyAppGate() {
+  const off = !!state.appDisabled;
+  const gate = $('#appDisabledGate');
+  const enable = $('#appEnableBtn');
+  if (gate) gate.classList.toggle('hidden', !off);
+  if (enable) enable.classList.toggle('hidden', !off || !isAdmin());
+
+  const status = $('#appPowerStatus');
+  const btn = $('#appPowerBtn');
+  if (status) {
+    if (off) {
+      const by = state.appDisabledBy ? ' · על ידי ' + state.appDisabledBy : '';
+      status.textContent = 'מושבתת' + by;
+      status.style.color = 'var(--bad)';
+    } else {
+      status.textContent = 'פעילה';
+      status.style.color = 'var(--ok)';
+    }
+  }
+  if (btn) {
+    btn.innerHTML = ic('power') + ' ' + (off ? 'הפעל את האפליקציה' : 'השבת את האפליקציה');
+    btn.classList.toggle('danger', !off);
+  }
+
+  if (off) {
+    clearInterval(pollTimer);
+    clearTimeout(syncTimer);
+    clearTimeout(retryTimer);
+    stopCamera();
+    closeLookupScan();
+  }
+}
+
+async function setAppPower(disabled) {
+  if (!isAdmin() || !cloudEnabled()) return;
+  if (disabled) {
+    const ok = await uiConfirm(
+      'להשבית את WigsStock בכל העמדות?\n\nהסריקה והסנכרון ייעצרו, וגם עבודת הרקע בשרת תדלג על הספירה עד שתפעיל אותה מחדש.',
+      { title: 'השבתת האפליקציה', danger: true, confirmText: 'השבת עכשיו', cancelText: 'ביטול' }
+    );
+    if (!ok) return;
+  }
+  try {
+    const r = await fetch(cloudBase() + '/api/app-state', {
+      method: 'POST', headers: cloudHeaders(),
+      body: JSON.stringify({
+        count_id: state.countId,
+        by: normName(state.session),
+        device_id: state.deviceId,
+        disabled: !!disabled
+      })
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    rememberAppState(data);
+    if (!disabled) {
+      state.cloudSince = 0;
+      save();
+      startPolling();
+      await pullCloud(true);
+    }
+  } catch (e) {
+    uiAlert('לא הצלחתי לשנות את מצב האפליקציה: ' + e.message, { danger: true, title: 'שגיאה' });
+  }
+}
+
 let syncTimer = null, retryTimer = null, syncing = false, pollTimer = null, syncStartedAt = 0;
 
 function schedulePush() {
@@ -2210,6 +2297,11 @@ async function pushCloud() {
       method: 'POST', headers: cloudHeaders(),
       body: JSON.stringify({ count_id: state.countId, device: deviceId(), scans })
     });
+    if (res.status === 423) {
+      const data = await res.json().catch(() => ({ disabled: true }));
+      rememberAppState({ disabled: true, ...data });
+      return;
+    }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     barcodes.forEach(b => delete state.dirty[b]);   // only clear what we sent
     save();
@@ -2269,6 +2361,15 @@ async function pullCloud(forceFull) {
     const res = await fetchT(url);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
+
+    if (data.disabled) {
+      rememberAppState(data);
+      // We still claim the saved station name once so an admin sees "הפעל מחדש".
+      if (hasStation()) await claimName(false);
+      applyAppGate();
+      return;
+    }
+    if (state.appDisabled) rememberAppState({ disabled: false });
 
     // A reset/delete/restore removes rows, which cannot be represented by a normal
     // delta. Re-baseline once with a full snapshot; ordinary polls stay tiny.
@@ -2356,7 +2457,7 @@ async function deleteScan(barcode) {
 
 function startPolling() {
   clearInterval(pollTimer);
-  if (!cloudEnabled()) return;
+  if (!cloudEnabled() || state.appDisabled) return;
   pollTimer = setInterval(() => {
     if (!cloudEnabled()) return;
     if (Object.keys(state.dirty).length) pushCloud();
@@ -2492,8 +2593,9 @@ function showTab(name) {
   if (name !== 'report') closeLookupScan();           // free the lookup camera when leaving the report
   if (name === 'report') { renderReport(); if (cloudEnabled()) pullCloud(); }   // refresh across stations
   if (name === 'export') renderExportPreview();
-  if (name === 'settings') { applyAdminGate(); renderResetHistory(); renderUsers(); }   // admin-only sections
+  if (name === 'settings') { applyAdminGate(); applyAppGate(); renderResetHistory(); renderUsers(); }   // admin-only sections
   if (name === 'scan') {
+    if (state.appDisabled) { applyAppGate(); return; }
     // require a station name first; start camera within the tap so iOS allows it
     if (applyStationGate()) { setTimeout(() => $('#stationGateInput').focus(), 60); }
     else ensureCamera();
@@ -2526,6 +2628,11 @@ function init() {
   sess.addEventListener('change', () => onNameCommitted(sess.value, sess));
   updateStationChip();
   $('#stationChip').addEventListener('click', () => navigate('settings'));
+  const powerBtn = $('#appPowerBtn');
+  if (powerBtn) powerBtn.addEventListener('click', () => setAppPower(!state.appDisabled));
+  const enableBtn = $('#appEnableBtn');
+  if (enableBtn) enableBtn.addEventListener('click', () => setAppPower(false));
+  applyAppGate();
 
   // mandatory-station gate on the scan tab
   $('#stationGateSave').addEventListener('click', async () => {
@@ -2535,7 +2642,7 @@ function init() {
     if (!hasStation()) { $('#stationGateInput').value = ''; $('#stationGateInput').focus(); return; }  // name was taken → stay on gate
     $('#stationGateInput').value = state.session;
     applyStationGate();
-    if (!stationClaim.blocked) ensureCamera();
+    if (!stationClaim.blocked && !state.appDisabled) ensureCamera();
   });
 
   // stable device id fallback (used if no station name is typed)
@@ -2571,9 +2678,8 @@ function init() {
     if (cloudEnabled()) {
       if (cloudDefaulted) markAllDirty();   // push any pre-existing local scans up once
       setCloudStatus('syncing');
-      startPolling();
-      pullCloud();
-      if (Object.keys(state.dirty).length) pushCloud();
+      pullCloud().then(() => { if (!state.appDisabled) startPolling(); });
+      if (Object.keys(state.dirty).length && !state.appDisabled) pushCloud();
     } else {
       setCloudStatus();
     }
@@ -3083,6 +3189,7 @@ async function claimName(force) {
   } catch (e) { /* keep last known claim state on a network blip */ }
   applyBlockGate();
   applyAdminGate();   // the server just told us our rank — reflect it in the UI
+  applyAppGate();
   return stationClaim;
 }
 
@@ -3255,8 +3362,8 @@ function onForeground() {
   const now = Date.now();
   if (now - lastForegroundSync < 4000) return;
   lastForegroundSync = now;
-  if (cloudEnabled()) pullCloud();
-  if (state.sheetUrl) loadFromSheet(false);
+  if (cloudEnabled() && !state.appDisabled) pullCloud();
+  if (state.sheetUrl && !state.appDisabled) loadFromSheet(false);
 }
 
 async function loadFromSheet(alertOnError) {
