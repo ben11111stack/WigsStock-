@@ -31,65 +31,74 @@ jobs:
           set -euo pipefail
           node <<'NODE'
           const fs = require('fs');
-          const token = process.env.CF_TOKEN;
-          const account = process.env.CF_ACCOUNT;
-          if (!token) throw new Error('No Cloudflare token is available in repository secrets.');
-          const headers = {Authorization: 'Bearer ' + token, 'Content-Type': 'application/json'};
-
-          async function json(url, init={}) {
-            const r = await fetch(url, {...init, headers:{...headers,...(init.headers||{})}});
-            const body = await r.json().catch(()=>null);
-            if (!r.ok || body?.success === false) {
-              const err = new Error('Cloudflare request failed ('+r.status+')');
-              err.details = body?.errors || body;
-              throw err;
+          const report = {
+            generated_at:new Date().toISOString(),
+            account:process.env.CF_ACCOUNT || null,
+            databases:[],
+            usage_today_utc:[],
+            account_total_rows_read:0
+          };
+          try {
+            const token = process.env.CF_TOKEN;
+            const account = process.env.CF_ACCOUNT;
+            if (!token) throw new Error('No Cloudflare token is available in repository secrets.');
+            const headers = {Authorization: 'Bearer ' + token, 'Content-Type': 'application/json'};
+            async function json(url, init={}) {
+              const r = await fetch(url, {...init, headers:{...headers,...(init.headers||{})}});
+              const body = await r.json().catch(()=>null);
+              if (!r.ok || body?.success === false) {
+                const err = new Error('Cloudflare request failed ('+r.status+')');
+                err.details = body?.errors || body;
+                throw err;
+              }
+              return body;
             }
-            return body;
-          }
+            const dbResp = await json('https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database?per_page=100');
+            const dbs = Array.isArray(dbResp.result) ? dbResp.result : [];
+            report.databases = dbs.map(d=>({name:d.name,uuid:d.uuid,created_at:d.created_at||null}));
 
-          const report = {generated_at:new Date().toISOString(), account, databases:[], usage_today_utc:[], account_total_rows_read:0};
-          const dbResp = await json('https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database?per_page=100');
-          const dbs = Array.isArray(dbResp.result) ? dbResp.result : [];
-          report.databases = dbs.map(d=>({name:d.name,uuid:d.uuid,created_at:d.created_at||null}));
-
-          const now = new Date();
-          const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-          const end = new Date(start.getTime()+86400000-1);
-          const ds = d => d.toISOString().slice(0,10);
-          const query = `query D1Usage($accountTag: string!, $start: Date, $end: Date) {
-            viewer {
-              accounts(filter: { accountTag: $accountTag }) {
-                d1AnalyticsAdaptiveGroups(
-                  limit: 10000
-                  filter: { date_geq: $start, date_leq: $end }
-                ) {
-                  sum { rowsRead rowsWritten readQueries writeQueries }
-                  dimensions { date databaseId }
+            const now = new Date();
+            const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+            const end = new Date(start.getTime()+86400000-1);
+            const ds = d => d.toISOString().slice(0,10);
+            const query = `query D1Usage($accountTag: string!, $start: Date, $end: Date) {
+              viewer {
+                accounts(filter: { accountTag: $accountTag }) {
+                  d1AnalyticsAdaptiveGroups(
+                    limit: 10000
+                    filter: { date_geq: $start, date_leq: $end }
+                  ) {
+                    sum { rowsRead rowsWritten readQueries writeQueries }
+                    dimensions { date databaseId }
+                  }
                 }
               }
+            }`;
+            try {
+              const gql = await json('https://api.cloudflare.com/client/v4/graphql', {
+                method:'POST',
+                body:JSON.stringify({query, variables:{accountTag:account,start:ds(start),end:ds(end)}})
+              });
+              const groups = gql?.data?.viewer?.accounts?.[0]?.d1AnalyticsAdaptiveGroups || [];
+              const byId = new Map(dbs.map(d=>[d.uuid,d.name]));
+              const sums = new Map();
+              for (const g of groups) {
+                const id = g.dimensions?.databaseId || 'unknown';
+                const x = sums.get(id) || {rowsRead:0,rowsWritten:0,readQueries:0,writeQueries:0};
+                for (const k of Object.keys(x)) x[k] += Number(g.sum?.[k]||0);
+                sums.set(id,x);
+              }
+              report.usage_today_utc = [...sums.entries()].map(([databaseId,x])=>({
+                databaseId, database:byId.get(databaseId)||null, ...x
+              })).sort((a,b)=>b.rowsRead-a.rowsRead);
+              report.account_total_rows_read = report.usage_today_utc.reduce((n,x)=>n+x.rowsRead,0);
+            } catch (e) {
+              report.graphql_error = e.message;
+              report.graphql_details = e.details || null;
             }
-          }`;
-          try {
-            const gql = await json('https://api.cloudflare.com/client/v4/graphql', {
-              method:'POST',
-              body:JSON.stringify({query, variables:{accountTag:account,start:ds(start),end:ds(end)}})
-            });
-            const groups = gql?.data?.viewer?.accounts?.[0]?.d1AnalyticsAdaptiveGroups || [];
-            const byId = new Map(dbs.map(d=>[d.uuid,d.name]));
-            const sums = new Map();
-            for (const g of groups) {
-              const id = g.dimensions?.databaseId || 'unknown';
-              const x = sums.get(id) || {rowsRead:0,rowsWritten:0,readQueries:0,writeQueries:0};
-              for (const k of Object.keys(x)) x[k] += Number(g.sum?.[k]||0);
-              sums.set(id,x);
-            }
-            report.usage_today_utc = [...sums.entries()].map(([databaseId,x])=>({
-              databaseId, database:byId.get(databaseId)||null, ...x
-            })).sort((a,b)=>b.rowsRead-a.rowsRead);
-            report.account_total_rows_read = report.usage_today_utc.reduce((n,x)=>n+x.rowsRead,0);
           } catch (e) {
-            report.graphql_error = e.message;
-            report.graphql_details = e.details || null;
+            report.audit_error = e.message;
+            report.audit_details = e.details || null;
           }
           fs.writeFileSync('cloudflare-d1-audit-result.json', JSON.stringify(report,null,2)+'\n');
           console.log(JSON.stringify(report,null,2));
