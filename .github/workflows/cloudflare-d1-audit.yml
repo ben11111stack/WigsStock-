@@ -8,13 +8,19 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: claude/inventory-barcode-scanner-4w4fbf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: Audit D1 rows read by database
         env:
@@ -24,6 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           node <<'NODE'
+          const fs = require('fs');
           const token = process.env.CF_TOKEN;
           const account = process.env.CF_ACCOUNT;
           if (!token) throw new Error('No Cloudflare token is available in repository secrets.');
@@ -33,15 +40,17 @@ jobs:
             const r = await fetch(url, {...init, headers:{...headers,...(init.headers||{})}});
             const body = await r.json().catch(()=>null);
             if (!r.ok || body?.success === false) {
-              throw new Error('Cloudflare request failed ('+r.status+'): '+JSON.stringify(body?.errors||body).slice(0,500));
+              const err = new Error('Cloudflare request failed ('+r.status+')');
+              err.details = body?.errors || body;
+              throw err;
             }
             return body;
           }
 
+          const report = {generated_at:new Date().toISOString(), account, databases:[], usage_today_utc:[], account_total_rows_read:0};
           const dbResp = await json('https://api.cloudflare.com/client/v4/accounts/'+account+'/d1/database?per_page=100');
           const dbs = Array.isArray(dbResp.result) ? dbResp.result : [];
-          console.log('D1 DATABASES');
-          for (const d of dbs) console.log('- '+d.name+' | '+d.uuid);
+          report.databases = dbs.map(d=>({name:d.name,uuid:d.uuid,created_at:d.created_at||null}));
 
           const now = new Date();
           const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -74,21 +83,17 @@ jobs:
               for (const k of Object.keys(x)) x[k] += Number(g.sum?.[k]||0);
               sums.set(id,x);
             }
-            console.log('\nTODAY UTC D1 USAGE ('+ds(start)+')');
-            let total = 0;
-            [...sums.entries()].sort((a,b)=>b[1].rowsRead-a[1].rowsRead).forEach(([id,x])=>{
-              total += x.rowsRead;
-              console.log((byId.get(id)||id)+': rowsRead='+x.rowsRead+', rowsWritten='+x.rowsWritten+', readQueries='+x.readQueries+', writeQueries='+x.writeQueries);
-            });
-            console.log('ACCOUNT TOTAL rowsRead='+total);
+            report.usage_today_utc = [...sums.entries()].map(([databaseId,x])=>({
+              databaseId, database:byId.get(databaseId)||null, ...x
+            })).sort((a,b)=>b.rowsRead-a.rowsRead);
+            report.account_total_rows_read = report.usage_today_utc.reduce((n,x)=>n+x.rowsRead,0);
           } catch (e) {
-            console.log('\nGRAPHQL ANALYTICS FAILED: '+e.message);
+            report.graphql_error = e.message;
+            report.graphql_details = e.details || null;
           }
+          fs.writeFileSync('cloudflare-d1-audit-result.json', JSON.stringify(report,null,2)+'\n');
+          console.log(JSON.stringify(report,null,2));
           NODE
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
 
       - name: Top WigsStock queries by rows read
         working-directory: worker
@@ -98,5 +103,21 @@ jobs:
         shell: bash
         run: |
           set +e
-          npx wrangler@latest d1 insights wigsstock --sort-type=sum --sort-by=reads --limit=10 --timePeriod=1d --json
+          npx wrangler@latest d1 insights wigsstock --sort-type=sum --sort-by=reads --limit=15 --timePeriod=1d --json > ../cloudflare-d1-wigsstock-insights.txt 2>&1
+          code=$?
+          echo "exit_code=$code" >> ../cloudflare-d1-wigsstock-insights.txt
           exit 0
+
+      - name: Save sanitized audit results to the repo
+        shell: bash
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cloudflare-d1-audit-result.json cloudflare-d1-wigsstock-insights.txt
+          if git diff --cached --quiet; then
+            echo "No audit result changes."
+          else
+            git commit -m "Record Cloudflare D1 usage audit"
+            git push origin HEAD:claude/inventory-barcode-scanner-4w4fbf
+          fi
