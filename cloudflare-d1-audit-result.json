@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-22T03:46:08.740Z",
+  "generated_at": "2026-09-22T03:47:08.628Z",
   "account": "7c5259865ad06b1a05dbff3e55d53027",
   "databases": [
     {
@@ -15,6 +15,7 @@
   ],
   "usage_today_utc": [
     {
+      "date": "2026-09-22",
       "databaseId": "25c4cb65-108a-4295-8090-5c2dc9c787ec",
       "database": "wigsstock",
       "rowsRead": 133330,
@@ -23,6 +24,63 @@
       "writeQueries": 2
     },
     {
+      "date": "2026-09-22",
+      "databaseId": "f80509c6-6e4a-4a87-8c1a-b07ee75a0390",
+      "database": "abba-care",
+      "rowsRead": 43199,
+      "rowsWritten": 10297,
+      "readQueries": 2971,
+      "writeQueries": 5546
+    }
+  ],
+  "usage_by_day": [
+    {
+      "date": "2026-09-20",
+      "databaseId": "25c4cb65-108a-4295-8090-5c2dc9c787ec",
+      "database": "wigsstock",
+      "rowsRead": 3077976,
+      "rowsWritten": 0,
+      "readQueries": 3437,
+      "writeQueries": 0
+    },
+    {
+      "date": "2026-09-20",
+      "databaseId": "f80509c6-6e4a-4a87-8c1a-b07ee75a0390",
+      "database": "abba-care",
+      "rowsRead": 1549494,
+      "rowsWritten": 36990,
+      "readQueries": 25739,
+      "writeQueries": 20224
+    },
+    {
+      "date": "2026-09-21",
+      "databaseId": "25c4cb65-108a-4295-8090-5c2dc9c787ec",
+      "database": "wigsstock",
+      "rowsRead": 3077976,
+      "rowsWritten": 0,
+      "readQueries": 4317,
+      "writeQueries": 0
+    },
+    {
+      "date": "2026-09-21",
+      "databaseId": "f80509c6-6e4a-4a87-8c1a-b07ee75a0390",
+      "database": "abba-care",
+      "rowsRead": 1260786,
+      "rowsWritten": 24381,
+      "readQueries": 16392,
+      "writeQueries": 13302
+    },
+    {
+      "date": "2026-09-22",
+      "databaseId": "25c4cb65-108a-4295-8090-5c2dc9c787ec",
+      "database": "wigsstock",
+      "rowsRead": 133330,
+      "rowsWritten": 4267,
+      "readQueries": 333,
+      "writeQueries": 2
+    },
+    {
+      "date": "2026-09-22",
       "databaseId": "f80509c6-6e4a-4a87-8c1a-b07ee75a0390",
       "database": "abba-care",
       "rowsRead": 43199,
