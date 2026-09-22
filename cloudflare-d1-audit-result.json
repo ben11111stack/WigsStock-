@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-09-22T03:46:08.740Z",
+  "account": "7c5259865ad06b1a05dbff3e55d53027",
+  "databases": [
+    {
+      "name": "abba-care",
+      "uuid": "f80509c6-6e4a-4a87-8c1a-b07ee75a0390",
+      "created_at": "2026-09-16T21:02:37.060Z"
+    },
+    {
+      "name": "wigsstock",
+      "uuid": "25c4cb65-108a-4295-8090-5c2dc9c787ec",
+      "created_at": "2026-07-09T18:37:01.322Z"
+    }
+  ],
+  "usage_today_utc": [
+    {
+      "databaseId": "25c4cb65-108a-4295-8090-5c2dc9c787ec",
+      "database": "wigsstock",
+      "rowsRead": 133330,
+      "rowsWritten": 4267,
+      "readQueries": 333,
+      "writeQueries": 2
+    },
+    {
+      "databaseId": "f80509c6-6e4a-4a87-8c1a-b07ee75a0390",
+      "database": "abba-care",
+      "rowsRead": 43199,
+      "rowsWritten": 10297,
+      "readQueries": 2971,
+      "writeQueries": 5546
+    }
+  ],
+  "account_total_rows_read": 176529
+}
