@@ -1,0 +1,40 @@
+name: Rebuild single-file app
+
+on:
+  push:
+    branches: [claude/inventory-barcode-scanner-4w4fbf]
+    paths:
+      - 'app.js'
+      - 'index.html'
+      - 'styles.css'
+      - 'build-single.js'
+      - '.github/workflows/rebuild-single.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/inventory-barcode-scanner-4w4fbf
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node build-single.js
+      - name: Commit refreshed single-file build
+        shell: bash
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add wigsstock-app.html
+          if git diff --cached --quiet; then
+            echo "Single-file build already current."
+          else
+            git commit -m "Refresh WigsStock single-file build"
+            git push origin HEAD:claude/inventory-barcode-scanner-4w4fbf
+          fi
