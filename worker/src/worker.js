@@ -85,9 +85,12 @@ async function ensureSchema(env) {
        reset_at INTEGER, last_written INTEGER,
        settings TEXT, settings_at INTEGER, updated_at INTEGER)`
   ).run();
-  // Defensive: add the settings columns to a meta table that predates them.
+  // Defensive: add columns to a meta table that predates them.
   try { await env.DB.prepare(`ALTER TABLE meta ADD COLUMN settings TEXT`).run(); } catch (e) { /* exists */ }
   try { await env.DB.prepare(`ALTER TABLE meta ADD COLUMN settings_at INTEGER`).run(); } catch (e) { /* exists */ }
+  try { await env.DB.prepare(`ALTER TABLE meta ADD COLUMN app_disabled INTEGER NOT NULL DEFAULT 0`).run(); } catch (e) { /* exists */ }
+  try { await env.DB.prepare(`ALTER TABLE meta ADD COLUMN disabled_at INTEGER`).run(); } catch (e) { /* exists */ }
+  try { await env.DB.prepare(`ALTER TABLE meta ADD COLUMN disabled_by TEXT`).run(); } catch (e) { /* exists */ }
   // Central, shared reset backups: a snapshot of a count's merged totals taken
   // right before each reset. Lives here (not on the device that clicked reset)
   // so ANY station can list and restore — even if the resetting device is gone.
@@ -144,6 +147,17 @@ function adminRanks(env) {
   return map;
 }
 function adminRank(env, name) { return adminRanks(env)[normName(name)] || 0; }
+
+async function readAppState(env, countId) {
+  const row = await env.DB.prepare(
+    `SELECT app_disabled, disabled_at, disabled_by FROM meta WHERE count_id = ?1`
+  ).bind(countId).first();
+  return {
+    disabled: !!(row && row.app_disabled),
+    disabled_at: (row && row.disabled_at) || 0,
+    disabled_by: (row && row.disabled_by) || ''
+  };
+}
 // A claimed name whose device hasn't checked in for this long is considered
 // abandoned and may be taken over by another device (prevents permanent lockout).
 const CLAIM_STALE_MS = 12 * 60 * 60 * 1000;   // 12 hours
@@ -247,6 +261,8 @@ export default {
         const scans = body.scans || {};
         if (!countId || !device) return json({ error: 'count_id and device required' }, 400);
         if (countId.length > MAX_ID_LEN || device.length > MAX_ID_LEN) return json({ error: 'count_id/device too long' }, 400);
+        const appState = await readAppState(env, countId);
+        if (appState.disabled) return json({ error: 'app_disabled', ...appState }, 423);
 
         // Reject scans from a station the admin has blocked.
         const st = await env.DB.prepare(`SELECT blocked FROM stations WHERE count_id = ?1 AND name = ?2`).bind(countId, device).first();
@@ -427,6 +443,39 @@ export default {
         return json({ ok: true, restored, reset_at: now });
       }
 
+      // Master shutdown switch. Only a server-confirmed admin can change it.
+      if (path === '/api/app-state' && req.method === 'GET') {
+        const countId = (url.searchParams.get('count_id') || '').trim();
+        const by = url.searchParams.get('by') || '';
+        const deviceId = url.searchParams.get('device_id') || '';
+        if (!countId) return json({ error: 'count_id required' }, 400);
+        const state = await readAppState(env, countId);
+        const admin = by && deviceId ? await isAdminReq(env, countId, by, deviceId) : false;
+        return json({ ok: true, ...state, admin });
+      }
+      if (path === '/api/app-state' && req.method === 'POST') {
+        const body = await req.json();
+        const countId = String(body.count_id || '').trim();
+        const by = normName(body.by);
+        const deviceId = String(body.device_id || '').trim();
+        const disabled = !!body.disabled;
+        if (!countId) return json({ error: 'count_id required' }, 400);
+        if (!(await isAdminReq(env, countId, by, deviceId)))
+          return json({ error: 'forbidden', forbidden: true }, 403);
+        const now = Date.now();
+        await env.DB.prepare(
+          `INSERT INTO meta (count_id, app_disabled, disabled_at, disabled_by, updated_at)
+           VALUES (?1, ?2, ?3, ?4, ?3)
+           ON CONFLICT(count_id) DO UPDATE SET
+             app_disabled=excluded.app_disabled,
+             disabled_at=excluded.disabled_at,
+             disabled_by=excluded.disabled_by,
+             updated_at=excluded.updated_at`
+        ).bind(countId, disabled ? 1 : 0, now, by).run();
+        if (disabled) await purgeLegacySnapshot(url.origin, countId);
+        return json({ ok: true, disabled, disabled_at: now, disabled_by: by, admin: true });
+      }
+
       // Claim/refresh a station name. Enforces unique names: the first device to
       // claim a name owns it; another device can only take it over once the
       // holder goes stale. Also returns whether the name is admin / blocked.
@@ -593,8 +642,13 @@ export default {
         const cutoff = Date.now();
 
         const m = await env.DB.prepare(
-          `SELECT sheet_url, script_url, reset_at, settings, settings_at FROM meta WHERE count_id = ?1`
+          `SELECT sheet_url, script_url, reset_at, settings, settings_at, app_disabled, disabled_at, disabled_by
+           FROM meta WHERE count_id = ?1`
         ).bind(countId).first();
+        if (m && m.app_disabled) {
+          return json({ ok: true, disabled: true, disabled_at: m.disabled_at || 0,
+            disabled_by: m.disabled_by || '', version: cutoff });
+        }
         const resetAt = (m && m.reset_at) || 0;
         const settingsAt = (m && m.settings_at) || 0;
         const base = {
@@ -655,6 +709,15 @@ export default {
         const countId = (url.searchParams.get('count_id') || '').trim();
         if (!countId) return json({ error: 'count_id required' }, 400);
 
+        const metaState = await env.DB.prepare(
+          `SELECT sheet_url, script_url, reset_at, settings, settings_at, app_disabled, disabled_at, disabled_by
+           FROM meta WHERE count_id = ?1`
+        ).bind(countId).first();
+        if (metaState && metaState.app_disabled) {
+          return json({ ok: true, disabled: true, disabled_at: metaState.disabled_at || 0,
+            disabled_by: metaState.disabled_by || '', version: Date.now() });
+        }
+
         // Compatibility for stations that still have the pre-1.17.9 app open: those
         // clients request a full snapshot every 4 seconds. Keep one edge-cached snapshot
         // for 30 seconds so they cannot burn millions of D1 row reads while the new
@@ -681,14 +744,11 @@ export default {
         }
 
         let sheetUrl = '', scriptUrl = '', resetAt = 0, settings = null, settingsAt = 0;
-        try {
-          const m = await env.DB.prepare(`SELECT sheet_url, script_url, reset_at, settings, settings_at FROM meta WHERE count_id = ?1`).bind(countId).first();
-          if (m) {
-            sheetUrl = m.sheet_url || ''; scriptUrl = m.script_url || ''; resetAt = m.reset_at || 0;
-            settingsAt = m.settings_at || 0;
-            if (m.settings) { try { settings = JSON.parse(m.settings); } catch (e) { settings = null; } }
-          }
-        } catch (e) { /* meta table may not exist yet */ }
+        if (metaState) {
+          sheetUrl = metaState.sheet_url || ''; scriptUrl = metaState.script_url || ''; resetAt = metaState.reset_at || 0;
+          settingsAt = metaState.settings_at || 0;
+          if (metaState.settings) { try { settings = JSON.parse(metaState.settings); } catch (e) { settings = null; } }
+        }
 
         const response = json({ ok: true, full: true, version, scans, detail, barcodes: Object.keys(scans).length,
           devices: deviceNames.size, sheet_url: sheetUrl, script_url: scriptUrl,
@@ -714,7 +774,9 @@ export default {
       await ensureSchema(env);
       const { results } = await env.DB
         .prepare(`SELECT count_id, script_url, last_written, settings, settings_at, updated_at
-                  FROM meta WHERE script_url IS NOT NULL AND script_url != ''`)
+                  FROM meta
+                  WHERE script_url IS NOT NULL AND script_url != ''
+                    AND COALESCE(app_disabled, 0) = 0`)
         .all();
       for (const m of results) {
         // Scan writes touch meta.updated_at, so cron checks one metadata row instead
