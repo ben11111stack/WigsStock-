@@ -12,7 +12,8 @@
  * Endpoints (all JSON, CORS open):
  *   GET  /api/health
  *   POST /api/sync    { count_id, device, scans: { barcode: count, ... } }
- *   GET  /api/scans?count_id=...   -> { scans: { barcode: total }, ... }
+ *   GET  /api/scans?count_id=...   -> full merged snapshot
+ *   GET  /api/changes?count_id=...&since=... -> only barcodes changed since the last poll
  *   POST /api/reset   { count_id, by } -> snapshots to `backups` then wipes
  *   GET  /api/backups?count_id=...  -> { backups: [{id, created_at, by, ...}] }
  *   POST /api/restore { count_id, backup_id } -> restores a snapshot for all stations
@@ -65,6 +66,11 @@ async function ensureSchema(env) {
        count INTEGER NOT NULL DEFAULT 1, updated_at INTEGER,
        PRIMARY KEY (count_id, device, barcode))`
   ).run();
+  // These two indexes are the core of cheap live sync: one finds only rows changed
+  // since the previous poll, the other recomputes totals only for those barcodes.
+  // Without them every 4-second poll scans the whole count and burns D1 row-read quota.
+  try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_scans_count_updated ON scans(count_id, updated_at)`).run(); } catch (e) { /* non-fatal */ }
+  try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_scans_count_barcode ON scans(count_id, barcode)`).run(); } catch (e) { /* non-fatal */ }
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS meta (
        count_id TEXT PRIMARY KEY, sheet_url TEXT, script_url TEXT,
@@ -180,14 +186,15 @@ function fieldsFromSettings(settingsJson) {
   } catch (e) { return {}; }
 }
 
-// Fast, throttled write-back triggered right after new scans arrive, so the
-// sheet updates within a few seconds instead of waiting for the cron.
+// Fast, throttled write-back triggered after new scans arrive. Thirty seconds is
+// still near-real-time for the sheet, while avoiding a full-table aggregate every
+// five seconds during a busy counting session.
 async function maybeWriteback(env, countId) {
   try {
     const m = await env.DB.prepare(`SELECT script_url, last_written, settings FROM meta WHERE count_id = ?1`).bind(countId).first();
     if (!m || !m.script_url) return;
     const now = Date.now();
-    if (m.last_written && now - m.last_written < 5000) return;   // at most one write / 5s
+    if (m.last_written && now - m.last_written < 30000) return;  // at most one write / 30s
     await env.DB.prepare(`UPDATE meta SET last_written = ?2 WHERE count_id = ?1`).bind(countId, now).run();
     await doWriteback(env, countId, m.script_url, fieldsFromSettings(m.settings));
   } catch (e) { /* cron will catch up */ }
@@ -255,8 +262,18 @@ export default {
           );
           if (stmts.length) { await env.DB.batch(stmts); synced += stmts.length; }
         }
-        // fast sheet update: fire a throttled write-back without blocking the response
-        if (synced > 0 && ctx && ctx.waitUntil) ctx.waitUntil(maybeWriteback(env, countId));
+        // Record that scan data changed. Cron can now compare this one metadata row
+        // instead of running MAX(updated_at) across the entire scans table every minute.
+        if (synced > 0) {
+          await env.DB.prepare(
+            `INSERT INTO meta (count_id, updated_at) VALUES (?1, ?2)
+             ON CONFLICT(count_id) DO UPDATE SET updated_at =
+               CASE WHEN COALESCE(meta.updated_at, 0) > excluded.updated_at
+                    THEN meta.updated_at ELSE excluded.updated_at END`
+          ).bind(countId, now).run();
+          // Fast sheet update: throttled and detached from the response.
+          if (ctx && ctx.waitUntil) ctx.waitUntil(maybeWriteback(env, countId));
+        }
         return json({ ok: true, synced });
       }
 
@@ -550,22 +567,90 @@ export default {
         return json({ ok: true, deleted: (r.meta && r.meta.changes) || 0, reset_at: now });
       }
 
+      // Lightweight live sync. The browser asks this every four seconds, but the
+      // indexed query below reads only rows touched since its previous answer — often
+      // zero rows. If many barcodes changed at once, it asks for one full snapshot.
+      if (path === '/api/changes' && req.method === 'GET') {
+        const countId = (url.searchParams.get('count_id') || '').trim();
+        if (!countId) return json({ error: 'count_id required' }, 400);
+        const since = Math.max(0, Number(url.searchParams.get('since')) || 0);
+        const settingsSince = Math.max(0, Number(url.searchParams.get('settings_since')) || 0);
+        const resetSeen = Math.max(0, Number(url.searchParams.get('reset_seen')) || 0);
+        const cutoff = Date.now();
+
+        const m = await env.DB.prepare(
+          `SELECT sheet_url, script_url, reset_at, settings, settings_at FROM meta WHERE count_id = ?1`
+        ).bind(countId).first();
+        const resetAt = (m && m.reset_at) || 0;
+        const settingsAt = (m && m.settings_at) || 0;
+        const base = {
+          ok: true, version: cutoff, reset_at: resetAt,
+          sheet_url: (m && m.sheet_url) || '', script_url: (m && m.script_url) || '',
+          settings_at: settingsAt
+        };
+
+        // A reset/delete/restore changes the meaning of rows that no longer exist,
+        // so deltas cannot describe it safely. One full pull re-baselines the client.
+        if (resetAt > resetSeen) return json({ ...base, full: true });
+
+        const changed = await env.DB.prepare(
+          `SELECT barcode, MAX(updated_at) AS changed_at
+           FROM scans
+           WHERE count_id = ?1 AND updated_at >= ?2 AND updated_at <= ?3
+           GROUP BY barcode
+           LIMIT 101`
+        ).bind(countId, since, cutoff).all();
+        const rows = changed.results || [];
+        if (rows.length > 100) return json({ ...base, full: true });
+
+        const scans = {}, detail = {};
+        const barcodes = rows.map(r => String(r.barcode));
+        // Recompute only the barcodes that changed. The count+barcode index turns
+        // each statement into a tiny lookup instead of a scan of the whole inventory.
+        for (let i = 0; i < barcodes.length; i += 40) {
+          const chunk = barcodes.slice(i, i + 40);
+          const batch = await env.DB.batch(chunk.map(barcode =>
+            env.DB.prepare(
+              `SELECT SUM(count) AS total, MAX(updated_at) AS last,
+                      GROUP_CONCAT(DISTINCT device) AS devices
+               FROM scans WHERE count_id = ?1 AND barcode = ?2`
+            ).bind(countId, barcode)
+          ));
+          batch.forEach((result, j) => {
+            const barcode = chunk[j];
+            const r = result && result.results && result.results[0];
+            const total = Number((r && r.total) || 0);
+            scans[barcode] = total; // zero means "remove this barcode" on the client
+            if (total > 0) detail[barcode] = {
+              count: total, last: (r && r.last) || 0, station: (r && r.devices) || ''
+            };
+          });
+        }
+
+        // The settings blob can be large, so only send it when another station
+        // actually changed settings since this device last adopted them.
+        if (m && m.settings && settingsAt > settingsSince) {
+          try { base.settings = JSON.parse(m.settings); } catch (e) { base.settings = null; }
+        }
+        return json({ ...base, delta: true, scans, detail });
+      }
+
       if (path === '/api/scans' && req.method === 'GET') {
         const countId = (url.searchParams.get('count_id') || '').trim();
         if (!countId) return json({ error: 'count_id required' }, 400);
+        // Mark the beginning of this snapshot. A write that lands while this query is
+        // running will simply be repeated by the next delta, never missed.
+        const version = Date.now();
         const { results } = await env.DB
           .prepare(`SELECT barcode, SUM(count) AS total, MAX(updated_at) AS last, GROUP_CONCAT(DISTINCT device) AS devices
                     FROM scans WHERE count_id = ?1 GROUP BY barcode`)
           .bind(countId).all();
-        const scans = {}, detail = {};
+        const scans = {}, detail = {}, deviceNames = new Set();
         for (const r of results) if (r.total > 0) {
           scans[r.barcode] = r.total;
           detail[r.barcode] = { count: r.total, last: r.last || 0, station: r.devices || '' };
+          String(r.devices || '').split(',').filter(Boolean).forEach(name => deviceNames.add(name));
         }
-
-        const dev = await env.DB
-          .prepare(`SELECT COUNT(DISTINCT device) AS n FROM scans WHERE count_id = ?1`)
-          .bind(countId).first();
 
         let sheetUrl = '', scriptUrl = '', resetAt = 0, settings = null, settingsAt = 0;
         try {
@@ -577,7 +662,9 @@ export default {
           }
         } catch (e) { /* meta table may not exist yet */ }
 
-        return json({ ok: true, scans, detail, barcodes: Object.keys(scans).length, devices: dev ? dev.n : 0, sheet_url: sheetUrl, script_url: scriptUrl, reset_at: resetAt, settings, settings_at: settingsAt });
+        return json({ ok: true, full: true, version, scans, detail, barcodes: Object.keys(scans).length,
+          devices: deviceNames.size, sheet_url: sheetUrl, script_url: scriptUrl,
+          reset_at: resetAt, settings, settings_at: settingsAt });
       }
 
       return json({ error: 'not found', path }, 404);
@@ -592,13 +679,13 @@ export default {
     try {
       await ensureSchema(env);
       const { results } = await env.DB
-        .prepare(`SELECT count_id, script_url, last_written, settings, settings_at FROM meta WHERE script_url IS NOT NULL AND script_url != ''`)
+        .prepare(`SELECT count_id, script_url, last_written, settings, settings_at, updated_at
+                  FROM meta WHERE script_url IS NOT NULL AND script_url != ''`)
         .all();
       for (const m of results) {
-        const mx = await env.DB.prepare(`SELECT MAX(updated_at) AS mx FROM scans WHERE count_id = ?1`).bind(m.count_id).first();
-        // a settings change (status/name edited in the app) must trigger a
-        // write too — not only new scans
-        const newest = Math.max((mx && mx.mx) || 0, m.settings_at || 0);
+        // Scan writes touch meta.updated_at, so cron checks one metadata row instead
+        // of MAX(updated_at) over every scan row in the count.
+        const newest = Math.max(m.updated_at || 0, m.settings_at || 0);
         if (!newest) continue;
         if (m.last_written && newest <= m.last_written) continue;   // nothing new since last write
         const res = await doWriteback(env, m.count_id, m.script_url, fieldsFromSettings(m.settings));
