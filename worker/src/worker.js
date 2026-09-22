@@ -35,6 +35,29 @@ async function purgeLegacySnapshot(origin, countId) {
   await caches.default.delete(legacySnapshotKey(origin, countId));
 }
 
+// While the app is administratively OFF, stale phones may still have an old
+// version open that polls every few seconds. Keep the OFF state in Workers'
+// edge cache so those requests are answered before D1 is touched at all.
+function disabledStateKey(countId) {
+  return new Request('https://wigsstock-state.invalid/disabled/' + encodeURIComponent(countId), { method: 'GET' });
+}
+async function cachedDisabledState(countId) {
+  if (typeof caches === 'undefined' || !caches.default) return null;
+  const hit = await caches.default.match(disabledStateKey(countId));
+  if (!hit) return null;
+  try { return await hit.json(); } catch { return null; }
+}
+async function cacheDisabledState(countId, state) {
+  if (typeof caches === 'undefined' || !caches.default) return;
+  const r = json(state);
+  r.headers.set('Cache-Control', 'public, max-age=604800');
+  await caches.default.put(disabledStateKey(countId), r);
+}
+async function clearDisabledState(countId) {
+  if (typeof caches === 'undefined' || !caches.default) return;
+  await caches.default.delete(disabledStateKey(countId));
+}
+
 // Optional shared secret. If API_KEY is set on the Worker (a Cloudflare
 // secret / var), every mutating endpoint requires a matching x-api-key header.
 // Unset = open, exactly like before — so this is safe to deploy as-is and can
@@ -149,14 +172,18 @@ function adminRanks(env) {
 function adminRank(env, name) { return adminRanks(env)[normName(name)] || 0; }
 
 async function readAppState(env, countId) {
+  const cached = await cachedDisabledState(countId);
+  if (cached && cached.disabled) return cached;
   const row = await env.DB.prepare(
     `SELECT app_disabled, disabled_at, disabled_by FROM meta WHERE count_id = ?1`
   ).bind(countId).first();
-  return {
+  const state = {
     disabled: !!(row && row.app_disabled),
     disabled_at: (row && row.disabled_at) || 0,
     disabled_by: (row && row.disabled_by) || ''
   };
+  if (state.disabled) await cacheDisabledState(countId, state);
+  return state;
 }
 // A claimed name whose device hasn't checked in for this long is considered
 // abandoned and may be taken over by another device (prevents permanent lockout).
@@ -472,8 +499,14 @@ export default {
              disabled_by=excluded.disabled_by,
              updated_at=excluded.updated_at`
         ).bind(countId, disabled ? 1 : 0, now, by).run();
-        if (disabled) await purgeLegacySnapshot(url.origin, countId);
-        return json({ ok: true, disabled, disabled_at: now, disabled_by: by, admin: true });
+        const state = { disabled, disabled_at: now, disabled_by: by };
+        if (disabled) {
+          await cacheDisabledState(countId, state);
+          await purgeLegacySnapshot(url.origin, countId);
+        } else {
+          await clearDisabledState(countId);
+        }
+        return json({ ok: true, ...state, admin: true });
       }
 
       // Claim/refresh a station name. Enforces unique names: the first device to
@@ -636,6 +669,9 @@ export default {
       if (path === '/api/changes' && req.method === 'GET') {
         const countId = (url.searchParams.get('count_id') || '').trim();
         if (!countId) return json({ error: 'count_id required' }, 400);
+        const cachedOff = await cachedDisabledState(countId);
+        if (cachedOff && cachedOff.disabled)
+          return json({ ok: true, ...cachedOff, version: Date.now() });
         const since = Math.max(0, Number(url.searchParams.get('since')) || 0);
         const settingsSince = Math.max(0, Number(url.searchParams.get('settings_since')) || 0);
         const resetSeen = Math.max(0, Number(url.searchParams.get('reset_seen')) || 0);
@@ -708,6 +744,9 @@ export default {
       if (path === '/api/scans' && req.method === 'GET') {
         const countId = (url.searchParams.get('count_id') || '').trim();
         if (!countId) return json({ error: 'count_id required' }, 400);
+        const cachedOff = await cachedDisabledState(countId);
+        if (cachedOff && cachedOff.disabled)
+          return json({ ok: true, ...cachedOff, version: Date.now() });
 
         const metaState = await env.DB.prepare(
           `SELECT sheet_url, script_url, reset_at, settings, settings_at, app_disabled, disabled_at, disabled_by
@@ -771,6 +810,10 @@ export default {
   // and new scans since the last write.
   async scheduled(event, env, ctx) {
     try {
+      // The deployed app uses the shared count id "main". When it is off, answer
+      // the cron from edge state too so an idle disabled app contributes zero D1 reads.
+      const off = await cachedDisabledState('main');
+      if (off && off.disabled) return;
       await ensureSchema(env);
       const { results } = await env.DB
         .prepare(`SELECT count_id, script_url, last_written, settings, settings_at, updated_at
